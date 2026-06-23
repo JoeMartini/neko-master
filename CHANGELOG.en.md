@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.9] - 2026-06-23
+
+### Fixed
+
+- **Silent persistence data loss when ClickHouse degrades** 🐛
+  - When ClickHouse was considered healthy the SQLite stats write was skipped, but the in-memory batch was cleared before the async ClickHouse write was confirmed. If that write failed (queue full / partial table failure / timeout) the data only lived briefly in the realtime memory store and was never persisted. The collector now writes the batch snapshot to SQLite as a durable fallback whenever the ClickHouse write fails and SQLite was skipped
+  - A full write queue now counts toward the unhealthy threshold so callers resume durable SQLite writes
+  - Health is reset only after a *complete* (detail + agg) traffic batch succeeds, so a table that fails persistently while another succeeds can no longer keep resetting the failure counter and mask the outage
+- **Agent mode under-counted traffic on counter resets** 🐛
+  - The Go agent dropped traffic to zero when a flow's counter went backwards (gateway restart / connection id reuse), diverging from the already-fixed direct collector. It now counts the current value as new traffic and re-counts the connection
+- **Deleting a backend left orphaned data** 🐛
+  - `PRAGMA foreign_keys` defaults OFF so the declared `ON DELETE CASCADE` never fired; deleting a backend removed only the config row and left all of its stats behind. `deleteBackend` now explicitly removes all associated data (including health logs, policy cache, agent heartbeats and snapshots)
+- **Collector did not recover after a backend password change** ([#65]) 🐛
+  - When a credential change restarted the collector, `disconnect` deferred the real teardown until after an async flush, so the old WebSocket kept reconnecting with the stale token and detached from management. The socket is now torn down synchronously first (set `isClosing`, clear the reconnect timer, close the socket) and flushed afterward
+- **WebSocket port env vars had no effect** ([#61]) 🐛
+  - `runtime-config.js` (written with the real external ports at container start) suffered a script-load race and caching, so the browser fell back to the build-time default port and `WS_EXTERNAL_PORT` appeared ineffective. The script is now loaded `beforeInteractive`, served `no-store`, and excluded from the PWA precache
+- **Mihomo proxy groups parsed as rules** ([#67], PR [#68] by @cesaryuan) 🐛
+  - Rule names no longer mis-use the last chain hop (the proxy group); they use the real matched rule, centralized into a shared `buildRuleName` helper that also removes drift between the multiple write paths
+- **Collector silently hangs, stops syncing** ([#74], PR [#76] by @zj1123581321) 🐛
+  - Adds a WebSocket heartbeat watchdog: it pings periodically and tracks last activity, force-terminating a silent link past the timeout to trigger the existing reconnect logic — fixing silently dropped TCP connections (gateway restart / NAT timeout) that left the socket "connected" while data stopped
+
+### Improved
+
+- **WebSocket reconnect now uses exponential backoff with jitter**: prevents a reconnect storm when several collectors hammer a down/flapping backend every 5s in lockstep; backoff resets after a successful connect. The Surge collector's backoff retries also gain jitter (`WS_MAX_RECONNECT_INTERVAL_MS`, default 60s)
+
+[#61]: https://github.com/foru17/neko-master/issues/61
+[#65]: https://github.com/foru17/neko-master/issues/65
+[#67]: https://github.com/foru17/neko-master/issues/67
+[#68]: https://github.com/foru17/neko-master/pull/68
+[#74]: https://github.com/foru17/neko-master/issues/74
+[#76]: https://github.com/foru17/neko-master/pull/76
+
 ## [1.3.8] - 2026-06-10
 
 ### Fixed

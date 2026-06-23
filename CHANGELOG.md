@@ -5,6 +5,38 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
+## [1.3.9] - 2026-06-23
+
+### 修复
+
+- **ClickHouse 降级时静默丢失持久化数据** 🐛
+  - 当 ClickHouse 被判定为健康时会跳过 SQLite 写入，但内存批次在 ClickHouse 异步写入确认前就被清空；一旦写入失败（队列满 / 部分表失败 / 超时），数据只短暂留在实时内存里，从未落盘。现在 ClickHouse 写入失败且 SQLite 被跳过时，会把本批快照回灌写入 SQLite 作为持久化兜底
+  - 写入队列已满现在计入「不健康」阈值，使采集器恢复 SQLite 写入
+  - 健康状态只在「detail+agg 整批」成功后才重置，避免某个表持续失败、另一个表成功时反复重置计数从而长期掩盖故障
+- **Agent 模式计数器重置漏记流量** 🐛
+  - Go Agent 在计数器回退（网关重启 / 连接 ID 复用）时把增量置 0 丢弃流量，与已修复的直采采集器不一致。现在同样将当前值计为新流量并重新计入连接数
+- **删除后端遗留孤儿数据** 🐛
+  - `PRAGMA foreign_keys` 默认关闭使 `ON DELETE CASCADE` 从未生效，删除后端只删除配置行、残留所有统计数据。`deleteBackend` 现显式删除全部关联数据（含健康日志、策略缓存、Agent 心跳与快照）
+- **更新后端密码后采集不恢复**（[#65]）🐛
+  - 凭据变更触发采集器重启时，`disconnect` 把真正的断开延迟到异步 flush 之后，旧 WebSocket 仍带旧 token 重连并脱离管理。现在先同步断开（置 `isClosing`、清重连定时器、关闭 socket）再 flush
+- **WebSocket 端口环境变量不生效**（[#61]）🐛
+  - `runtime-config.js`（容器启动时写入真实外部端口）存在脚本加载竞态与缓存，浏览器回退到构建期默认端口，使 `WS_EXTERNAL_PORT` 看似无效。现以 `beforeInteractive` 加载该脚本、对其设置 `no-store` 且排除出 PWA 预缓存
+- **Mihomo 代理组被解析成规则**（[#67]，PR [#68] 由 @cesaryuan 贡献）🐛
+  - 规则名不再误用链路最后一跳（代理组），改用真实匹配规则，并集中到共享 `buildRuleName` helper，消除多写路径的逻辑漂移
+- **采集器静默挂起、数据停止同步**（[#74]，PR [#76] 由 @zj1123581321 贡献）🐛
+  - 新增 WebSocket 心跳看门狗：定期 ping 并跟踪最近活跃时间，链路静默超时则强制 terminate，触发既有重连逻辑，修复 TCP 静默断开（网关重启 / NAT 超时）导致的「连接仍在但数据停更」
+
+### 优化
+
+- **WebSocket 重连改为指数退避 + 抖动**：避免后端宕机 / 抖动时多个采集器每 5 秒同步重连造成的雪崩；连接成功后重置退避。Surge 采集器的退避重试也加入抖动（`WS_MAX_RECONNECT_INTERVAL_MS` 可配，默认 60s）
+
+[#61]: https://github.com/foru17/neko-master/issues/61
+[#65]: https://github.com/foru17/neko-master/issues/65
+[#67]: https://github.com/foru17/neko-master/issues/67
+[#68]: https://github.com/foru17/neko-master/pull/68
+[#74]: https://github.com/foru17/neko-master/issues/74
+[#76]: https://github.com/foru17/neko-master/pull/76
+
 ## [1.3.8] - 2026-06-10
 
 ### 修复
