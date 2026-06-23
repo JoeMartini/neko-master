@@ -325,6 +325,30 @@ export function createSurgeCollector(
         }
       }
 
+      // Durable fallback: SQLite writes were skipped because ClickHouse was
+      // considered healthy, but the ClickHouse write failed. Persist the
+      // snapshot to SQLite so the data is not silently lost.
+      if (
+        stats.hasTrafficUpdates &&
+        stats.trafficOk &&
+        stats.sqliteSkipped &&
+        (!trafficDetailOk || !trafficAggOk)
+      ) {
+        try {
+          db.batchUpdateTrafficStats(id, stats.updates, false);
+          trafficDetailOk = true;
+          trafficAggOk = true;
+          console.warn(
+            `[SurgeCollector:${id}] ClickHouse traffic write failed; persisted ${stats.updates.length} updates to SQLite as fallback`,
+          );
+        } catch (fallbackErr) {
+          console.error(
+            `[SurgeCollector:${id}] SQLite fallback for traffic also failed; retaining realtime store`,
+            fallbackErr,
+          );
+        }
+      }
+
       if (stats.hasTrafficUpdates && stats.trafficOk) {
         if (trafficDetailOk && trafficAggOk) {
           realtimeStore.clearTraffic(id);
@@ -344,6 +368,26 @@ export function createSurgeCollector(
           console.warn(
             `[SurgeCollector:${id}] ClickHouse country write failed, keeping realtime country store`,
             err,
+          );
+        }
+      }
+
+      if (
+        stats.hasCountryUpdates &&
+        stats.countryOk &&
+        stats.sqliteSkipped &&
+        !countryWriteOk
+      ) {
+        try {
+          db.batchUpdateCountryStats(id, stats.countryUpdates);
+          countryWriteOk = true;
+          console.warn(
+            `[SurgeCollector:${id}] ClickHouse country write failed; persisted to SQLite as fallback`,
+          );
+        } catch (fallbackErr) {
+          console.error(
+            `[SurgeCollector:${id}] SQLite fallback for country also failed; retaining realtime store`,
+            fallbackErr,
           );
         }
       }

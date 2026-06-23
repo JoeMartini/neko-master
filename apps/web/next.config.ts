@@ -65,6 +65,19 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // runtime-config.js is rewritten at container start with the real
+        // external ports / URLs (docker-start.sh). It must never be cached or
+        // the browser keeps using the stale build-time default, ignoring
+        // WS_EXTERNAL_PORT / API_EXTERNAL_PORT. See issue #61.
+        source: "/runtime-config.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, no-cache, must-revalidate",
+          },
+        ],
+      },
     ];
   },
 };
@@ -82,7 +95,9 @@ if (process.env.NODE_ENV === "production") {
       register: true,
       skipWaiting: true,
       disable: false,
-      buildExcludes: [/middleware-manifest.json$/],
+      // Never precache runtime-config.js — it is rewritten at container start
+      // with the real ports/URLs and must always be fetched fresh (issue #61).
+      buildExcludes: [/middleware-manifest.json$/, /runtime-config\.js$/],
     })(finalConfig);
   } catch {
     // PWA not available, use base config

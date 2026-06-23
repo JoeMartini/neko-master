@@ -171,7 +171,12 @@ export class BackendRepository {
    * Delete a backend and all its associated data
    */
   deleteBackend(id: number): void {
-    // Due to ON DELETE CASCADE, all associated stats will be deleted automatically
+    // ON DELETE CASCADE is declared on the child tables, but `PRAGMA
+    // foreign_keys` defaults OFF in better-sqlite3 (and enabling it globally
+    // would interfere with the table-rebuild migrations), so the cascade never
+    // fires. Explicitly delete all associated data first to avoid orphaned
+    // rows accumulating after a backend is removed.
+    this.deleteBackendData(id);
     const stmt = this.db.prepare(`DELETE FROM backend_configs WHERE id = ?`);
     stmt.run(id);
   }
@@ -203,6 +208,10 @@ export class BackendRepository {
       this.db.prepare(`DELETE FROM device_stats WHERE backend_id = ?`).run(id);
       this.db.prepare(`DELETE FROM device_domain_stats WHERE backend_id = ?`).run(id);
       this.db.prepare(`DELETE FROM device_ip_stats WHERE backend_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM backend_health_logs WHERE backend_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM surge_policy_cache WHERE backend_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM agent_heartbeats WHERE backend_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM agent_snapshots WHERE backend_id = ?`).run(id);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');

@@ -480,15 +480,17 @@ func (r *Runner) ingestSnapshots(snapshots []domain.FlowSnapshot, nowMs int64) {
 		deltaUp := s.Upload
 		deltaDown := s.Download
 		if hasPrev {
-			if s.Upload >= prev.LastUpload {
+			if s.Upload < prev.LastUpload || s.Download < prev.LastDown {
+				// Counter reset (gateway restart / connection id reuse): the
+				// counter went backwards. Match the direct gateway collector and
+				// treat the current value as new traffic instead of silently
+				// dropping it, and re-count the connection.
+				deltaUp = s.Upload
+				deltaDown = s.Download
+				counted = false
+			} else {
 				deltaUp = s.Upload - prev.LastUpload
-			} else {
-				deltaUp = 0
-			}
-			if s.Download >= prev.LastDown {
 				deltaDown = s.Download - prev.LastDown
-			} else {
-				deltaDown = 0
 			}
 		}
 

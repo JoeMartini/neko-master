@@ -71,9 +71,18 @@ func TestIngestSnapshotsDeltaCalculation(t *testing.T) {
 		Rule:     "MATCH",
 	}}, 3000)
 
+	// Counter reset (upload went backwards 25 -> 5): match the direct gateway
+	// collector and count the current value as new traffic, re-counting the
+	// connection, instead of silently dropping it.
 	third := runner.takeBatch(10)
-	if len(third) != 0 {
-		t.Fatalf("expected third batch len 0 when counters reset, got %d", len(third))
+	if len(third) != 1 {
+		t.Fatalf("expected third batch len 1 when counters reset, got %d", len(third))
+	}
+	if third[0].Upload != 5 || third[0].Download != 3 {
+		t.Fatalf("expected reset to count current 5/3 as new traffic, got %d/%d", third[0].Upload, third[0].Download)
+	}
+	if third[0].Connections != 1 {
+		t.Fatalf("expected reset to re-count connection (1), got %d", third[0].Connections)
 	}
 }
 

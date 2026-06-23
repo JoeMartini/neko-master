@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "../globals.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
@@ -76,7 +77,13 @@ export default async function RootLayout({
           content="black-translucent"
         />
         <meta name="apple-mobile-web-app-title" content="Neko Master" />
-        <script src="/runtime-config.js" />
+        {/*
+          Load runtime config (real external ports/URLs written by
+          docker-start.sh) BEFORE the app bundle, so the WebSocket client reads
+          window.__RUNTIME_CONFIG__.WS_PORT instead of racing and falling back
+          to the build-time default. See issue #61.
+        */}
+        <Script src="/runtime-config.js" strategy="beforeInteractive" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}>

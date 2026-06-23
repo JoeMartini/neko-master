@@ -51,6 +51,16 @@ export function toMinuteKey(timestampMs?: number): string {
   return `${date.slice(0, 16)}:00`;
 }
 
+export interface CountryUpdate {
+  country: string;
+  countryName: string;
+  continent: string;
+  upload: number;
+  download: number;
+  connections: number;
+  timestampMs?: number;
+}
+
 export interface FlushResult {
   domains: number;
   rules: number;
@@ -63,6 +73,17 @@ export interface FlushResult {
   pendingTrafficWrite?: Promise<TrafficWriteOutcome>;
   /** Pending country write */
   pendingCountryWrite?: Promise<void>;
+  /**
+   * Whether SQLite stats writes were skipped this flush because ClickHouse
+   * was considered healthy. When true and the ClickHouse write later fails,
+   * the caller must persist `updates`/`countryUpdates` to SQLite as a durable
+   * fallback to avoid silent data loss.
+   */
+  sqliteSkipped: boolean;
+  /** Snapshot of the traffic updates flushed this round (for fallback) */
+  updates: TrafficUpdate[];
+  /** Snapshot of the country updates flushed this round (for fallback) */
+  countryUpdates: CountryUpdate[];
 }
 
 export class BatchBuffer {
@@ -144,6 +165,7 @@ export class BatchBuffer {
     let countryOk = true;
     const hasTrafficUpdates = updates.length > 0;
     let hasCountryUpdates = false;
+    let countryUpdates: CountryUpdate[] = [];
     let pendingTrafficWrite: Promise<TrafficWriteOutcome> | undefined;
     let pendingCountryWrite: Promise<void> | undefined;
 
@@ -171,7 +193,7 @@ export class BatchBuffer {
 
     if (geoResults.length > 0) {
       try {
-        const countryUpdates = geoResults
+        countryUpdates = geoResults
           .filter(
             (r): r is GeoIPResult & { geo: NonNullable<GeoIPResult["geo"]> } =>
               r.geo !== null,
@@ -220,6 +242,9 @@ export class BatchBuffer {
       hasUpdates: hasTrafficUpdates || hasCountryUpdates,
       pendingTrafficWrite,
       pendingCountryWrite,
+      sqliteSkipped: skipSqliteStatsWrites,
+      updates,
+      countryUpdates,
     };
   }
 

@@ -4,6 +4,7 @@ import { StatsDatabase } from "../db/db.js";
 import { GeoIPService } from "../geo/geo.service.js";
 import { TrafficWriteError } from "../clickhouse/clickhouse.writer.js";
 import { realtimeStore } from "../realtime/realtime.store.js";
+import { calculateBackoffDelay } from "../../shared/utils/backoff.js";
 import { BatchBuffer } from "./batch-buffer.js";
 
 // Stale connection cleanup constants
@@ -33,6 +34,8 @@ export class GatewayCollector {
   private url: string;
   private token?: string;
   private reconnectInterval: number;
+  private maxReconnectInterval: number;
+  private reconnectAttempts = 0;
   private heartbeatInterval: number;
   private heartbeatTimeout: number;
   private onData?: (data: ConnectionsData) => void;
@@ -48,6 +51,10 @@ export class GatewayCollector {
     this.url = options.url;
     this.token = options.token;
     this.reconnectInterval = options.reconnectInterval || 5000;
+    this.maxReconnectInterval = Math.max(
+      this.reconnectInterval,
+      parseInt(process.env.WS_MAX_RECONNECT_INTERVAL_MS || "60000", 10) || 60000,
+    );
     this.heartbeatInterval =
       options.heartbeatInterval ??
       parseInt(
@@ -84,6 +91,7 @@ export class GatewayCollector {
 
     this.ws.on("open", () => {
       console.log(`[Collector:${this.backendId}] WebSocket connected`);
+      this.reconnectAttempts = 0;
       this.startHeartbeat();
     });
 
@@ -161,13 +169,21 @@ export class GatewayCollector {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
+    // Exponential backoff with jitter so a down/flapping backend is not
+    // hammered every 5s in lockstep across collectors (thundering herd).
+    const delay = calculateBackoffDelay(
+      this.reconnectAttempts,
+      this.reconnectInterval,
+      this.maxReconnectInterval,
+    );
+    this.reconnectAttempts += 1;
     console.log(
-      `[Collector:${this.backendId}] Reconnecting in ${this.reconnectInterval}ms...`,
+      `[Collector:${this.backendId}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`,
     );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, this.reconnectInterval);
+    }, delay);
   }
 
   disconnect() {
@@ -271,6 +287,30 @@ export function createCollector(
         }
       }
 
+      // Durable fallback: SQLite writes were skipped because ClickHouse was
+      // considered healthy, but the ClickHouse write failed. Persist the
+      // snapshot to SQLite so the data is not silently lost.
+      if (
+        stats.hasTrafficUpdates &&
+        stats.trafficOk &&
+        stats.sqliteSkipped &&
+        (!trafficDetailOk || !trafficAggOk)
+      ) {
+        try {
+          db.batchUpdateTrafficStats(id, stats.updates, false);
+          trafficDetailOk = true;
+          trafficAggOk = true;
+          console.warn(
+            `[Collector:${id}] ClickHouse traffic write failed; persisted ${stats.updates.length} updates to SQLite as fallback`,
+          );
+        } catch (fallbackErr) {
+          console.error(
+            `[Collector:${id}] SQLite fallback for traffic also failed; retaining realtime store`,
+            fallbackErr,
+          );
+        }
+      }
+
       if (stats.hasTrafficUpdates && stats.trafficOk) {
         if (trafficDetailOk && trafficAggOk) {
           realtimeStore.clearTraffic(id);
@@ -292,6 +332,26 @@ export function createCollector(
           console.warn(
             `[Collector:${id}] ClickHouse country write failed, keeping realtime country store`,
             err,
+          );
+        }
+      }
+
+      if (
+        stats.hasCountryUpdates &&
+        stats.countryOk &&
+        stats.sqliteSkipped &&
+        !countryWriteOk
+      ) {
+        try {
+          db.batchUpdateCountryStats(id, stats.countryUpdates);
+          countryWriteOk = true;
+          console.warn(
+            `[Collector:${id}] ClickHouse country write failed; persisted to SQLite as fallback`,
+          );
+        } catch (fallbackErr) {
+          console.error(
+            `[Collector:${id}] SQLite fallback for country also failed; retaining realtime store`,
+            fallbackErr,
           );
         }
       }
@@ -597,7 +657,7 @@ export function createCollector(
 
   // Override disconnect to clear intervals
   const originalDisconnect = collector.disconnect.bind(collector);
-  const waitForFlushThenDisconnect = async () => {
+  const waitForFlushThenStop = async () => {
     while (isFlushing) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
@@ -612,9 +672,13 @@ export function createCollector(
       clearInterval(cleanupInterval);
       cleanupInterval = null;
     }
-    void waitForFlushThenDisconnect().finally(() => {
-      originalDisconnect();
-    });
+    // Tear down the socket synchronously FIRST: this sets isClosing=true,
+    // clears the reconnect timer and closes the WebSocket immediately, so a
+    // credential/URL change (stop + start with new config) can never leave the
+    // old socket reconnecting with the stale token. Drain the buffer afterward.
+    // See issue #65.
+    originalDisconnect();
+    void waitForFlushThenStop();
   };
 
   const collectorWithReset = collector as GatewayCollector & {

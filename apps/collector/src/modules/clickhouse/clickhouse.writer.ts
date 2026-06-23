@@ -147,6 +147,9 @@ export class ClickHouseWriter {
       this.pendingRows + safeRowCount > this.maxPendingRows
     ) {
       this.metrics.failures += 1;
+      // A full queue means ClickHouse cannot keep up; count it toward the
+      // unhealthy threshold so callers resume durable SQLite writes.
+      this.consecutiveFailures += 1;
       this.maybeLogMetrics();
       console.warn(
         `[ClickHouse Writer] Dropped batch because pending queue is full (batches=${this.pendingBatches}/${this.maxPendingBatches}, rows=${this.pendingRows}/${this.maxPendingRows})`,
@@ -228,6 +231,11 @@ export class ClickHouseWriter {
       );
     }
 
+    // Both detail and agg committed: ClickHouse is accepting writes again.
+    if (this.consecutiveFailures > 0) {
+      console.info('[ClickHouse Writer] Recovered from failure, marking healthy again.');
+      this.consecutiveFailures = 0;
+    }
     return { detailOk: true, aggOk: true };
   }
 
@@ -259,10 +267,9 @@ export class ClickHouseWriter {
         throw new Error(`status=${response.status} body=${text.slice(0, 200)}`);
       }
 
-      if (this.consecutiveFailures > 0) {
-        console.info('[ClickHouse Writer] Recovered from failure, marking healthy again.');
-        this.consecutiveFailures = 0;
-      }
+      // Note: health is reset only after a *complete* traffic batch succeeds
+      // (see writeTrafficTables); resetting here on any single-table success
+      // would mask a table that fails persistently while another succeeds.
       if (metricType === 'traffic') {
         this.metrics.trafficBatches += 1;
         this.metrics.trafficRows += rows.length;
