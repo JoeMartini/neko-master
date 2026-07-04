@@ -336,10 +336,6 @@ export class ConfigRepository extends BaseRepository {
     this.db.prepare(`DELETE FROM minute_dim_stats WHERE minute < ?`).run(minuteCutoff);
     this.db.prepare(`DELETE FROM minute_country_stats WHERE minute < ?`).run(minuteCutoff);
     this.db.prepare(`DELETE FROM connection_logs WHERE timestamp < ?`).run(cutoff);
-    // Also clean hourly_dim_stats and hourly_country_stats using the same cutoff (hour granularity)
-    const hourCutoff = cutoff.slice(0, 13) + ':00:00';
-    this.db.prepare(`DELETE FROM hourly_dim_stats WHERE hour < ?`).run(hourCutoff);
-    this.db.prepare(`DELETE FROM hourly_country_stats WHERE hour < ?`).run(hourCutoff);
     return this.db.prepare(`DELETE FROM minute_stats WHERE minute < ?`).run(minuteCutoff).changes;
   }
 
@@ -348,6 +344,10 @@ export class ConfigRepository extends BaseRepository {
   }
 
   deleteOldHourlyStats(cutoff: string): number {
+    // hourly_dim/hourly_country back all >6h range queries (resolveFactTable),
+    // so they must follow the hourly retention window, not the minute one.
+    this.db.prepare(`DELETE FROM hourly_dim_stats WHERE hour < ?`).run(cutoff);
+    this.db.prepare(`DELETE FROM hourly_country_stats WHERE hour < ?`).run(cutoff);
     return this.db.prepare(`DELETE FROM hourly_stats WHERE hour < ?`).run(cutoff).changes;
   }
 
