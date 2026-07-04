@@ -250,6 +250,7 @@ export function useStatsWebSocket(options: UseStatsWebSocketOptions = {}) {
   const trackLastMessageRef = useRef(trackLastMessage);
   const summaryFieldsKeyRef = useRef(summaryFieldsDependencyKey);
   const hasSummaryFieldsFilterRef = useRef(!!normalizedSummaryFields);
+  const backendIdRef = useRef(backendId);
   onMessageRef.current = options.onMessage;
   onConnectRef.current = options.onConnect;
   onDisconnectRef.current = options.onDisconnect;
@@ -257,6 +258,7 @@ export function useStatsWebSocket(options: UseStatsWebSocketOptions = {}) {
   trackLastMessageRef.current = trackLastMessage;
   summaryFieldsKeyRef.current = summaryFieldsDependencyKey;
   hasSummaryFieldsFilterRef.current = !!normalizedSummaryFields;
+  backendIdRef.current = backendId;
 
   const cleanup = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -326,6 +328,17 @@ export function useStatsWebSocket(options: UseStatsWebSocketOptions = {}) {
           const message = JSON.parse(event.data) as WebSocketMessage;
 
           if (message.type === 'stats' && message.data) {
+            // Drop in-flight pushes from a previously subscribed backend —
+            // without this a backend switch briefly writes the old backend's
+            // data into the new backend's caches.
+            if (
+              message.backendId !== undefined &&
+              backendIdRef.current !== undefined &&
+              message.backendId !== backendIdRef.current
+            ) {
+              return;
+            }
+
             if (hasSummaryFieldsFilterRef.current) {
               const incomingSummaryFieldsKey = summaryFieldsKey(message.summaryFields);
               if (

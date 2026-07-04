@@ -1191,6 +1191,7 @@ export class StatsWebSocketServer {
 
       const message: WebSocketMessage = {
         type: 'stats',
+        backendId: this.resolveBackendId(clientInfo.backendId) ?? clientInfo.backendId ?? undefined,
         summaryFields: clientInfo.includeSummary
           ? this.buildSummaryFieldList(clientInfo.summaryFields)
           : undefined,
@@ -1293,6 +1294,7 @@ export class StatsWebSocketServer {
               stats
                 ? JSON.stringify({
                   type: 'stats',
+                  backendId: resolvedBackendId,
                   summaryFields: clientInfo.includeSummary
                     ? this.buildSummaryFieldList(clientInfo.summaryFields)
                     : undefined,

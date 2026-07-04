@@ -10,6 +10,7 @@ import {
 import { scaleLinear } from "d3-scale";
 import { Globe, Info } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useTheme } from "next-themes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes, formatNumber } from "@/lib/utils";
 import { useCountryName } from "@/lib/i18n-country";
@@ -46,8 +47,26 @@ const COUNTRY_NAME_MAPPING: Record<string, string> = {
   // Add more mappings as needed
 };
 
+// Map colors are inline SVG values, so both themes are defined here instead
+// of Tailwind classes. Dark ramps from deep indigo to bright indigo so high
+// traffic pops on the dark background.
+const MAP_THEME = {
+  light: {
+    noData: "#f1f5f9",
+    stroke: "#cbd5e1",
+    scale: ["#e0e7ff", "#818cf8", "#6366f1", "#4f46e5"],
+  },
+  dark: {
+    noData: "#1e2536",
+    stroke: "rgba(148, 163, 184, 0.18)",
+    scale: ["#312e81", "#4f46e5", "#818cf8", "#c7d2fe"],
+  },
+} as const;
+
 export function WorldTrafficMap({ data }: WorldTrafficMapProps) {
   const t = useTranslations("map");
+  const { resolvedTheme } = useTheme();
+  const mapTheme = resolvedTheme === "dark" ? MAP_THEME.dark : MAP_THEME.light;
   const countryName = useCountryName();
   const [hoveredCountry, setHoveredCountry] = useState<string | null>(null);
   const [tooltipData, setTooltipData] = useState<{
@@ -66,12 +85,12 @@ export function WorldTrafficMap({ data }: WorldTrafficMapProps) {
     return Math.max(...data.map((d) => d.totalDownload + d.totalUpload));
   }, [data]);
 
-  // Create color scale (light blue to deep purple)
+  // Create color scale (theme-aware)
   const colorScale = useMemo(() => {
     return scaleLinear<string>()
       .domain([0, maxTraffic * 0.1, maxTraffic * 0.5, maxTraffic])
-      .range(["#e0e7ff", "#818cf8", "#6366f1", "#4f46e5"]);
-  }, [maxTraffic]);
+      .range([...mapTheme.scale]);
+  }, [maxTraffic, mapTheme]);
 
   // Create country lookup map
   const countryMap = useMemo(() => {
@@ -109,7 +128,7 @@ export function WorldTrafficMap({ data }: WorldTrafficMapProps) {
     }
 
     // Default color for countries with no data
-    return "#f1f5f9";
+    return mapTheme.noData;
   };
 
   // Handle mouse enter
@@ -184,7 +203,7 @@ export function WorldTrafficMap({ data }: WorldTrafficMapProps) {
                       key={geo.rsmKey}
                       geography={geo}
                       fill={getFillColor(geo)}
-                      stroke="#cbd5e1"
+                      stroke={mapTheme.stroke}
                       strokeWidth={0.5}
                       style={{
                         default: {
@@ -264,22 +283,9 @@ export function WorldTrafficMap({ data }: WorldTrafficMapProps) {
             <div className="flex items-center gap-1">
               <span className="text-xs">{t("low")}</span>
               <div className="flex">
-                <div
-                  className="w-6 h-3"
-                  style={{ backgroundColor: "#e0e7ff" }}
-                />
-                <div
-                  className="w-6 h-3"
-                  style={{ backgroundColor: "#818cf8" }}
-                />
-                <div
-                  className="w-6 h-3"
-                  style={{ backgroundColor: "#6366f1" }}
-                />
-                <div
-                  className="w-6 h-3"
-                  style={{ backgroundColor: "#4f46e5" }}
-                />
+                {mapTheme.scale.map((color) => (
+                  <div key={color} className="w-6 h-3" style={{ backgroundColor: color }} />
+                ))}
               </div>
               <span className="text-xs">{t("high")}</span>
             </div>

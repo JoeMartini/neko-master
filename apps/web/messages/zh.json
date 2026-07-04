@@ -262,6 +262,8 @@
     "upload": "上传",
     "chainFlow": "规则链路流向",
     "loadingChainFlow": "加载链路流向...",
+    "chainFlowError": "链路流向加载失败",
+    "chainFlowRetry": "重试",
     "showAll": "全景展示",
     "activePolicy": "全部策略",
     "noTrafficRecord": "暂无流量记录",

@@ -1761,8 +1761,8 @@ export function BackendConfigDialog({
                                     size="icon"
                                     className={cn(
                                       "h-8 w-8",
-                                      backend.health?.status === 'healthy' && "text-green-600 hover:text-green-700 hover:bg-green-50",
-                                      backend.health?.status === 'unhealthy' && "text-red-500 hover:text-red-600 hover:bg-red-50",
+                                      backend.health?.status === 'healthy' && "text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-500/10",
+                                      backend.health?.status === 'unhealthy' && "text-red-500 hover:text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/10",
                                       !backend.health && "text-gray-400"
                                     )}
                                     onClick={() => handleTest(backend)}

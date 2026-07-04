@@ -926,6 +926,7 @@ function UnifiedRuleChainFlowInner({
   const [data, setData] = useState<AllChainFlowData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const [activePolicyOnly, setActivePolicyOnly] = useState(false);
   const prevRuleRef = useRef(selectedRule);
@@ -1100,7 +1101,7 @@ function UnifiedRuleChainFlowInner({
     return () => {
       cancelled = true;
     };
-  }, [activeBackendId, stableRange, useHttpFallback, commitChainFlowData]);
+  }, [activeBackendId, stableRange, useHttpFallback, commitChainFlowData, retryNonce]);
 
   useEffect(() => {
     if (!wsEnabled) {
@@ -1501,7 +1502,30 @@ function UnifiedRuleChainFlowInner({
     );
   }
 
-  if (error || !renderData || renderData.nodes.length <= 1) {
+  if (error) {
+    return (
+      <Card className="mb-4">
+        <CardContent className="py-8">
+          <div className="flex flex-col items-center justify-center gap-3">
+            <span className="text-sm text-muted-foreground">{t("chainFlowError")}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs rounded-full"
+              onClick={() => {
+                setError(null);
+                setLoading(true);
+                setRetryNonce((n) => n + 1);
+              }}>
+              {t("chainFlowRetry")}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!renderData || renderData.nodes.length <= 1) {
     return null;
   }
 
@@ -1598,7 +1622,8 @@ export const UnifiedRuleChainFlow = memo(
     prev.activeBackendId === next.activeBackendId &&
     prev.autoRefresh === next.autoRefresh &&
     prev.timeRange?.start === next.timeRange?.start &&
-    prev.timeRange?.end === next.timeRange?.end,
+    prev.timeRange?.end === next.timeRange?.end &&
+    prev.visibleRuleNames === next.visibleRuleNames,
 );
 
 // Backward-compatible alias

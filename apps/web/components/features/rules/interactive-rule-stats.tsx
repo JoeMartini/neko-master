@@ -534,7 +534,7 @@ export function InteractiveRuleStats({
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                             <span className="text-blue-500 dark:text-blue-400 whitespace-nowrap">↓ {formatBytes(item.download)}</span>
-                            <span className="text-purple-500 dark:text-blue-400 whitespace-nowrap">↑ {formatBytes(item.upload)}</span>
+                            <span className="text-purple-500 dark:text-purple-400 whitespace-nowrap">↑ {formatBytes(item.upload)}</span>
                             <span className="flex items-center gap-1 tabular-nums">
                               <Link2 className="w-3 h-3" />
                               {formatNumber(item.connections)}

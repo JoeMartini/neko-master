@@ -233,7 +233,7 @@ export function Header({
                             variant="secondary"
                             className={cn(
                               "text-[10px] h-5 gap-1",
-                              isUnhealthy && "bg-red-100 text-red-600 border-red-200"
+                              isUnhealthy && "bg-red-100 text-red-600 border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/25"
                             )}
                           >
                             <Radio className={cn("w-2 h-2", isUnhealthy && "text-red-500")} />

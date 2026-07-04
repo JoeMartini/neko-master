@@ -263,6 +263,8 @@
     "upload": "Upload",
     "chainFlow": "Rule Chain Flow",
     "loadingChainFlow": "Loading chain flow...",
+    "chainFlowError": "Failed to load chain flow",
+    "chainFlowRetry": "Retry",
     "showAll": "Panorama",
     "activePolicy": "All Policies",
     "noTrafficRecord": "No traffic record",
