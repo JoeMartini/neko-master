@@ -438,13 +438,10 @@ export class TrafficWriterRepository extends BaseRepository {
       for (const [, data] of ruleChainMap) { ruleChainStmt.run({ backendId, rule: data.rule, chain: data.chain, upload: data.upload, download: data.download, count: data.count, timestamp }); }
     });
     
-    if (!reduceWrites) {
-      tx1();
-    } else {
-      // In reduceWrites mode (ClickHouse enabled), we still need hourly_stats and proxy_stats 
-      // as they are minimal and useful for light queries. We skip domain, IP, and detailed rule maps
-      // to drastically reduce B-tree updates and WAL amplification.
-      const tx1Light = this.db.transaction(() => {
+    // In reduceWrites mode (ClickHouse enabled), we still need hourly_stats and proxy_stats
+    // as they are minimal and useful for light queries. We skip domain, IP, and detailed rule maps
+    // to drastically reduce B-tree updates and WAL amplification.
+    const tx1Light = this.db.transaction(() => {
         const hourlyStmt = this.db.prepare(`
           INSERT INTO hourly_stats (backend_id, hour, upload, download, connections) VALUES (@backendId, @hour, @upload, @download, @connections)
           ON CONFLICT(backend_id, hour) DO UPDATE SET upload = upload + @upload, download = download + @download, connections = connections + @connections
@@ -459,9 +456,7 @@ export class TrafficWriterRepository extends BaseRepository {
             total_connections = total_connections + @count, last_seen = @timestamp
         `);
         for (const [chain, data] of chainMap) { proxyStmt.run({ backendId, chain, upload: data.upload, download: data.download, count: data.count, timestamp }); }
-      });
-      tx1Light();
-    }
+    });
 
     // Sub-transaction 2: Detail tables + minute/hourly tables
     const tx2 = this.db.transaction(() => {
@@ -538,11 +533,9 @@ export class TrafficWriterRepository extends BaseRepository {
         }
       }
     });
-    tx2();
 
     // Sub-transaction 3: Device tables
-    if (!reduceWrites) {
-      const tx3 = this.db.transaction(() => {
+    const tx3 = this.db.transaction(() => {
       const deviceStmt = this.db.prepare(`
         INSERT INTO device_stats (backend_id, source_ip, total_upload, total_download, total_connections, last_seen)
         VALUES (@backendId, @sourceIP, @upload, @download, @count, @timestamp)
@@ -569,8 +562,22 @@ export class TrafficWriterRepository extends BaseRepository {
           total_connections = total_connections + @count, last_seen = @timestamp
       `);
       for (const [, data] of deviceIPMap) { deviceIPStmt.run({ backendId, sourceIP: data.sourceIP, ip: data.ip, upload: data.upload, download: data.download, count: data.count, timestamp }); }
-      });
-      tx3();
-    }
+    });
+
+    // One outer transaction: a mid-flush error rolls back every table, so a
+    // retried batch cannot double-count tables that had already committed.
+    // (Nested better-sqlite3 transactions become savepoints automatically.)
+    const flushAll = this.db.transaction(() => {
+      if (reduceWrites) {
+        tx1Light();
+      } else {
+        tx1();
+      }
+      tx2();
+      if (!reduceWrites) {
+        tx3();
+      }
+    });
+    flushAll();
   }
 }
