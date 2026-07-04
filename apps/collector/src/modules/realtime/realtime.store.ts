@@ -615,10 +615,12 @@ export class RealtimeStore {
     countryMap.set(key, countryDelta);
   }
 
+  // Rows are live store objects — consumers (rule chain flow merges) treat
+  // them as read-only, so skip cloning the whole map per WS broadcast.
   getRuleChainRows(backendId: number): Array<{ rule: string; chain: string; totalUpload: number; totalDownload: number; totalConnections: number }> {
     const ruleChainMap = this.ruleChainByBackend.get(backendId);
     if (!ruleChainMap) return [];
-    return Array.from(ruleChainMap.values()).map(r => ({ ...r }));
+    return Array.from(ruleChainMap.values());
   }
 
   getSummaryDelta(backendId: number): SummaryDelta {

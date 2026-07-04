@@ -15,6 +15,12 @@ interface ProxyTrafficStats {
   totalConnections: number;
 }
 
+// Row cap for the all-rules chain-flow DAG (RULE_CHAIN_FLOW_MAX_ROWS to tune).
+function getRuleChainFlowMaxRows(): number {
+  const parsed = Number.parseInt(process.env.RULE_CHAIN_FLOW_MAX_ROWS || '2000', 10);
+  return Math.max(100, Number.isFinite(parsed) && parsed > 0 ? parsed : 2000);
+}
+
 export class RuleRepository extends BaseRepository {
   constructor(db: Database.Database) {
     super(db);
@@ -342,20 +348,24 @@ export class RuleRepository extends BaseRepository {
     }
 
     if (realtimeRows) {
+      const rowsByChain = new Map<string, (typeof rows)[number]>();
+      for (const r of rows) rowsByChain.set(r.chain, r);
       for (const rt of realtimeRows) {
         if (rt.rule !== rule) continue;
-        const index = rows.findIndex((r) => r.chain === rt.chain);
-        if (index >= 0) {
-          rows[index].totalUpload += rt.totalUpload;
-          rows[index].totalDownload += rt.totalDownload;
-          rows[index].totalConnections += rt.totalConnections;
+        const existing = rowsByChain.get(rt.chain);
+        if (existing) {
+          existing.totalUpload += rt.totalUpload;
+          existing.totalDownload += rt.totalDownload;
+          existing.totalConnections += rt.totalConnections;
         } else {
-          rows.push({
+          const added = {
             chain: rt.chain,
             totalUpload: rt.totalUpload,
             totalDownload: rt.totalDownload,
             totalConnections: rt.totalConnections,
-          });
+          };
+          rows.push(added);
+          rowsByChain.set(rt.chain, added);
         }
       }
     }
@@ -411,15 +421,21 @@ export class RuleRepository extends BaseRepository {
     const range = this.parseMinuteRange(start, end);
     let rows: Array<{ rule: string; chain: string; totalUpload: number; totalDownload: number; totalConnections: number }>;
 
+    // Cap the DAG source rows: the graph is dominated by the top-traffic
+    // rule/chain pairs, and unbounded scans here run on every WS push.
+    const maxRows = getRuleChainFlowMaxRows();
+
     if (range) {
       const resolved = this.resolveFactTable(start!, end!);
       const stmt = this.db.prepare(`
         SELECT rule, chain, SUM(upload) as totalUpload, SUM(download) as totalDownload, SUM(connections) as totalConnections
         FROM ${resolved.table}
         WHERE backend_id = ? AND ${resolved.timeCol} >= ? AND ${resolved.timeCol} <= ? AND rule != '' AND chain != ''
-        GROUP BY rule, chain ORDER BY rule, chain
+        GROUP BY rule, chain
+        ORDER BY (SUM(upload) + SUM(download)) DESC
+        LIMIT ?
       `);
-      rows = stmt.all(backendId, resolved.startKey, resolved.endKey) as typeof rows;
+      rows = stmt.all(backendId, resolved.startKey, resolved.endKey, maxRows) as typeof rows;
 
       const baselineStmt = this.db.prepare(`
         SELECT rule, chain, total_upload as totalUpload, total_download as totalDownload, total_connections as totalConnections
@@ -430,28 +446,33 @@ export class RuleRepository extends BaseRepository {
     } else {
       const stmt = this.db.prepare(`
         SELECT rule, chain, total_upload as totalUpload, total_download as totalDownload, total_connections as totalConnections
-        FROM rule_chain_traffic WHERE backend_id = ? ORDER BY rule, chain
+        FROM rule_chain_traffic WHERE backend_id = ?
+        ORDER BY (total_upload + total_download) DESC
+        LIMIT ?
       `);
-      rows = stmt.all(backendId) as typeof rows;
-      // DB query result logging removed
+      rows = stmt.all(backendId, maxRows) as typeof rows;
     }
 
     if (realtimeRows) {
-      // Realtime rows logging removed
+      const rowsByKey = new Map<string, (typeof rows)[number]>();
+      for (const r of rows) rowsByKey.set(`${r.rule}\u0000${r.chain}`, r);
       for (const rt of realtimeRows) {
-        const index = rows.findIndex((r) => r.rule === rt.rule && r.chain === rt.chain);
-        if (index >= 0) {
-          rows[index].totalUpload += rt.totalUpload;
-          rows[index].totalDownload += rt.totalDownload;
-          rows[index].totalConnections += rt.totalConnections;
+        const key = `${rt.rule}\u0000${rt.chain}`;
+        const existing = rowsByKey.get(key);
+        if (existing) {
+          existing.totalUpload += rt.totalUpload;
+          existing.totalDownload += rt.totalDownload;
+          existing.totalConnections += rt.totalConnections;
         } else {
-          rows.push({
+          const added = {
             rule: rt.rule,
             chain: rt.chain,
             totalUpload: rt.totalUpload,
             totalDownload: rt.totalDownload,
             totalConnections: rt.totalConnections,
-          });
+          };
+          rows.push(added);
+          rowsByKey.set(key, added);
         }
       }
     }
