@@ -157,6 +157,13 @@ export class StatsDatabase {
       this.db.exec(stmt);
     }
 
+    // Drop legacy (total_download + total_upload) expression indexes: the
+    // planner never used them (queries filter by backend_id first) and they
+    // amplified every write to the four hottest tables.
+    for (const idx of ['idx_domain_stats_traffic', 'idx_ip_stats_traffic', 'idx_proxy_stats_traffic', 'idx_rule_stats_traffic']) {
+      this.db.exec(`DROP INDEX IF EXISTS ${idx}`);
+    }
+
     // Migration: Add type column if not exists (for older databases)
     try {
       this.db.exec(`ALTER TABLE backend_configs ADD COLUMN type TEXT DEFAULT 'clash'`);

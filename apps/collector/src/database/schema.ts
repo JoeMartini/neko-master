@@ -460,15 +460,14 @@ export const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_rule_domain_traffic ON rule_domain_traffic(backend_id, rule);`,
   `CREATE INDEX IF NOT EXISTS idx_rule_ip_traffic ON rule_ip_traffic(backend_id, rule);`,
 
-  // Stats indexes
+  // Stats indexes.
+  // No expression indexes on (total_download + total_upload): every hot query
+  // filters by backend_id first, so SQLite never used them for the ORDER BY —
+  // they only added write amplification on the four hottest tables.
   `CREATE INDEX IF NOT EXISTS idx_domain_stats_backend ON domain_stats(backend_id);`,
-  `CREATE INDEX IF NOT EXISTS idx_domain_stats_traffic ON domain_stats(total_download + total_upload);`,
   `CREATE INDEX IF NOT EXISTS idx_ip_stats_backend ON ip_stats(backend_id);`,
-  `CREATE INDEX IF NOT EXISTS idx_ip_stats_traffic ON ip_stats(total_download + total_upload);`,
   `CREATE INDEX IF NOT EXISTS idx_proxy_stats_backend ON proxy_stats(backend_id);`,
-  `CREATE INDEX IF NOT EXISTS idx_proxy_stats_traffic ON proxy_stats(total_download + total_upload);`,
   `CREATE INDEX IF NOT EXISTS idx_rule_stats_backend ON rule_stats(backend_id);`,
-  `CREATE INDEX IF NOT EXISTS idx_rule_stats_traffic ON rule_stats(total_download + total_upload);`,
   `CREATE INDEX IF NOT EXISTS idx_rule_proxy_map ON rule_proxy_map(backend_id, rule, proxy);`,
   `CREATE INDEX IF NOT EXISTS idx_country_stats_backend ON country_stats(backend_id);`,
   `CREATE INDEX IF NOT EXISTS idx_hourly_stats_backend ON hourly_stats(backend_id);`,
