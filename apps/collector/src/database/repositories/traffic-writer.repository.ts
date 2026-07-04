@@ -374,11 +374,11 @@ export class TrafficWriterRepository extends BaseRepository {
         INSERT INTO domain_stats (backend_id, domain, ips, total_upload, total_download, total_connections, last_seen, rules, chains)
         VALUES (@backendId, @domain, @ip, @upload, @download, @count, @timestamp, @rule, @chain)
         ON CONFLICT(backend_id, domain) DO UPDATE SET
-          ips = CASE WHEN domain_stats.ips IS NULL THEN @ip WHEN LENGTH(domain_stats.ips) > 4000 THEN domain_stats.ips WHEN INSTR(domain_stats.ips, @ip) > 0 THEN domain_stats.ips ELSE domain_stats.ips || ',' || @ip END,
+          ips = CASE WHEN domain_stats.ips IS NULL THEN @ip WHEN LENGTH(domain_stats.ips) > 4000 THEN domain_stats.ips WHEN INSTR(',' || domain_stats.ips || ',', ',' || @ip || ',') > 0 THEN domain_stats.ips ELSE domain_stats.ips || ',' || @ip END,
           total_upload = total_upload + @upload, total_download = total_download + @download,
           total_connections = total_connections + @count, last_seen = @timestamp,
-          rules = CASE WHEN domain_stats.rules IS NULL THEN @rule WHEN LENGTH(domain_stats.rules) > 4000 THEN domain_stats.rules WHEN INSTR(domain_stats.rules, @rule) > 0 THEN domain_stats.rules ELSE domain_stats.rules || ',' || @rule END,
-          chains = CASE WHEN domain_stats.chains IS NULL THEN @chain WHEN LENGTH(domain_stats.chains) > 4000 THEN domain_stats.chains WHEN INSTR(domain_stats.chains, @chain) > 0 THEN domain_stats.chains ELSE domain_stats.chains || ',' || @chain END
+          rules = CASE WHEN domain_stats.rules IS NULL THEN @rule WHEN LENGTH(domain_stats.rules) > 4000 THEN domain_stats.rules WHEN INSTR(',' || domain_stats.rules || ',', ',' || @rule || ',') > 0 THEN domain_stats.rules ELSE domain_stats.rules || ',' || @rule END,
+          chains = CASE WHEN domain_stats.chains IS NULL THEN @chain WHEN LENGTH(domain_stats.chains) > 4000 THEN domain_stats.chains WHEN INSTR(',' || domain_stats.chains || ',', ',' || @chain || ',') > 0 THEN domain_stats.chains ELSE domain_stats.chains || ',' || @chain END
       `);
       for (const [, data] of domainMap) {
         const ruleName = buildRuleName(data);
@@ -390,11 +390,11 @@ export class TrafficWriterRepository extends BaseRepository {
         INSERT INTO ip_stats (backend_id, ip, domains, total_upload, total_download, total_connections, last_seen, chains, rules)
         VALUES (@backendId, @ip, @domain, @upload, @download, @count, @timestamp, @chain, @rule)
         ON CONFLICT(backend_id, ip) DO UPDATE SET
-          domains = CASE WHEN ip_stats.domains IS NULL THEN @domain WHEN LENGTH(ip_stats.domains) > 4000 THEN ip_stats.domains WHEN INSTR(ip_stats.domains, @domain) > 0 THEN ip_stats.domains ELSE ip_stats.domains || ',' || @domain END,
+          domains = CASE WHEN ip_stats.domains IS NULL THEN @domain WHEN LENGTH(ip_stats.domains) > 4000 THEN ip_stats.domains WHEN INSTR(',' || ip_stats.domains || ',', ',' || @domain || ',') > 0 THEN ip_stats.domains ELSE ip_stats.domains || ',' || @domain END,
           total_upload = total_upload + @upload, total_download = total_download + @download,
           total_connections = total_connections + @count, last_seen = @timestamp,
-          chains = CASE WHEN ip_stats.chains IS NULL THEN @chain WHEN LENGTH(ip_stats.chains) > 4000 THEN ip_stats.chains WHEN INSTR(ip_stats.chains, @chain) > 0 THEN ip_stats.chains ELSE ip_stats.chains || ',' || @chain END,
-          rules = CASE WHEN ip_stats.rules IS NULL THEN @rule WHEN LENGTH(ip_stats.rules) > 4000 THEN ip_stats.rules WHEN INSTR(ip_stats.rules, @rule) > 0 THEN ip_stats.rules ELSE ip_stats.rules || ',' || @rule END
+          chains = CASE WHEN ip_stats.chains IS NULL THEN @chain WHEN LENGTH(ip_stats.chains) > 4000 THEN ip_stats.chains WHEN INSTR(',' || ip_stats.chains || ',', ',' || @chain || ',') > 0 THEN ip_stats.chains ELSE ip_stats.chains || ',' || @chain END,
+          rules = CASE WHEN ip_stats.rules IS NULL THEN @rule WHEN LENGTH(ip_stats.rules) > 4000 THEN ip_stats.rules WHEN INSTR(',' || ip_stats.rules || ',', ',' || @rule || ',') > 0 THEN ip_stats.rules ELSE ip_stats.rules || ',' || @rule END
       `);
       for (const [, data] of ipMap) {
         const fullChain = data.chains.join(' > ');

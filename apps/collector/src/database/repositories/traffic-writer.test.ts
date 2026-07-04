@@ -86,6 +86,26 @@ describe('TrafficWriterRepository', () => {
   });
 
   describe('batchUpdateTrafficStats', () => {
+    it('should append a distinct IP even when it is a substring of an existing one', () => {
+      const base = {
+        domain: 'd.com',
+        chain: 'ProxyA',
+        chains: ['ProxyA', 'GroupA'],
+        rule: 'DOMAIN',
+        rulePayload: 'd.com',
+        upload: 10,
+        download: 10,
+        sourceIP: '192.168.1.3',
+      };
+      db.batchUpdateTrafficStats(backendId, [{ ...base, ip: '11.2.3.45', timestampMs: Date.now() }]);
+      db.batchUpdateTrafficStats(backendId, [{ ...base, ip: '1.2.3.4', timestampMs: Date.now() }]);
+
+      const domains = db.getDomainStats(backendId, 10);
+      expect(domains).toHaveLength(1);
+      expect(domains[0].ips).toContain('11.2.3.45');
+      expect(domains[0].ips).toContain('1.2.3.4');
+    });
+
     it('should write all dimensions for a batch of updates', () => {
       const updates = [
         {
