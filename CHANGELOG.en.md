@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.10] - 2026-07-04
+
+This release comes from a project-wide deep review (architecture / database / performance / frontend / UX) and fixes the high-risk findings. Full report: `docs/dev/deep-review-2026-07.md`.
+
+### Fixed
+
+- **RuleSet/IPCIDR type nodes appeared in the rule chain-flow entry column (v1.3.9 regression)** 🐛
+  - The v1.3.9 rule-naming change (PR [#68]) switched mihomo's aggregation key from the top-level policy group to the raw rule type + payload, breaking the flow-graph entry column and the frontend's gateway-rule matching (both key on policy-group names). Multi-hop chains key on the last chain hop again; rule detail names remain only for single-hop DIRECT/REJECT chains. A one-time startup migration remaps the polluted rows back to policy-group names and merges totals
+- **A 30-day range effectively contained only 7 days of dimension data** 🐛
+  - `hourly_dim_stats` / `hourly_country_stats` (backing every >6h range query) were deleted with the 7-day minute-level retention cutoff. They now follow the hourly retention window (default 30 days)
+- **Silent missing data when ClickHouse writes are enabled but reads stay on SQLite** 🐛
+  - Reduced SQLite writes (skipping domain/IP/rule/dim tables) previously only checked ClickHouse write health; deployments with the default `STATS_QUERY_SOURCE=sqlite` kept reading from SQLite where those tables were never written. Reduction now requires reads to actually prefer ClickHouse (clickhouse/auto/CH_ONLY_MODE) and the misconfiguration warns at startup
+- **Substring mismatches dropped values from CSV association columns** 🐛
+  - Bare `INSTR` dedup treated `a.com` as already present when `aa.com` was in the list (same for IPs and rule/chain names). All columns now use the delimiter-aware `','||list||','` pattern
+- **Non-atomic batch writes double-counted on retry** 🐛
+  - The three sub-transactions of a batch flush committed independently; a mid-flush failure caused the retried buffer to double-count tables that had already committed. One outer transaction now wraps them (inner ones degrade to savepoints)
+- **Cross-backend data bleed while switching backends** 🐛
+  - WebSocket stats pushes now carry `backendId` and the client drops in-flight pushes that don't match the current subscription
+- **Error surfaces**: added route-level and global error boundaries (a crashing visualization no longer blanks the whole dashboard); chain-flow load failures render a retry card instead of disappearing silently
+- **Dark mode fixes** 🌓: the world map is now theme-aware (no-data fill / color ramp / stroke / legend — previously a glaring light-colored map on dark backgrounds); upload arrows in the rules list used blue in dark mode making up/down indistinguishable; health test button hover and unhealthy badge gained missing dark variants
+- **Active Policy whitelist never updated**: the `UnifiedRuleChainFlow` memo comparator ignored `visibleRuleNames`
+
+### Changed
+
+- **Chain-flow query complexity**: realtime merge went from O(R×N) per-row `findIndex` to a Map merge; the DAG source rows are capped to the top-N by traffic (`RULE_CHAIN_FLOW_MAX_ROWS`, default 2000) instead of a full-table scan; the realtime rule-chain map is no longer deep-copied per broadcast
+- **WebSocket broadcast concurrency + outbound backpressure**: broadcast payloads now fetch concurrently (previously serially awaited per client); clients whose outbound buffer exceeds `WS_MAX_BUFFERED_BYTES` (default 4MB) are skipped for the round so one slow reader can't grow the heap unboundedly; metrics line gains `backpressure_skips`
+- **Dropped four expression indexes** on `(total_download + total_upload)` that the query planner never used, removing write amplification on the four hottest tables; existing databases drop them at startup
+- **Single write implementation**: removed the drifted, caller-less single-update write path; `updateTrafficStats` now wraps the batch path
+
+[#68]: https://github.com/foru17/neko-master/pull/68
+
 ## [1.3.9] - 2026-06-23
 
 ### Fixed

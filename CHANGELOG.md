@@ -5,6 +5,37 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
+## [1.3.10] - 2026-07-04
+
+本版本源自一次全项目深度审查（架构 / 数据库 / 性能 / 前端 / 交互），集中修复其中的高危问题。完整审查报告见 `docs/dev/deep-review-2026-07.md`。
+
+### 修复
+
+- **规则链路图入口列出现 RuleSet/IPCIDR 类型节点（v1.3.9 回归）** 🐛
+  - v1.3.9 的规则命名调整（PR [#68]）把 mihomo 流量的聚合主键从顶层策略组改成了原始规则类型 + payload，破坏了链路图入口列与前端网关规则匹配（两者都以策略组名为键）。多跳链路恢复以最后一跳策略组为主键；规则明细名仅用于直连 DIRECT/REJECT 的单跳链路。启动时一次性迁移会把污染数据重映射回策略组名并合并累计值
+- **30 天时间范围实际只有 7 天维度数据** 🐛
+  - `hourly_dim_stats` / `hourly_country_stats`（支撑所有 >6 小时范围查询）被 7 天的分钟级 retention 一并删除。现改为跟随小时级 retention 窗口（默认 30 天）
+- **ClickHouse 写启用但读源为 SQLite 时静默缺数据** 🐛
+  - 精简 SQLite 写入（跳过 domain/IP/rule/dim 表）此前只看 ClickHouse 写健康状态；默认 `STATS_QUERY_SOURCE=sqlite` 的部署读的还是 SQLite，那些表却没写。现在只有读源确实偏向 ClickHouse（clickhouse/auto/CH_ONLY_MODE）时才精简写入，配置错位时启动告警
+- **CSV 关联列子串误匹配丢数据** 🐛
+  - 裸 `INSTR` 去重会把 `a.com` 误判为已存在于 `aa.com`（IP、规则名同理），导致 domain/ip 关联列表静默缺项。统一改为带分隔符的 `','||list||','` 匹配
+- **批量写非原子导致重试双计** 🐛
+  - 批量落库的三段子事务独立提交，中途失败后 buffer 重放会对已提交的表二次累加。现在由外层单事务包住（内层自动降级为 savepoint）
+- **切换后端瞬间数据串台** 🐛
+  - WebSocket 推送现在携带 `backendId`，前端丢弃与当前订阅不符的在飞推送，避免旧后端数据写入新后端缓存
+- **前端错误处理补全**：新增路由级与全局错误边界（可视化组件异常不再白屏整页）；链路图加载失败渲染带重试的占位卡片，不再静默消失
+- **暗色模式修复** 🌓：世界地图整体适配暗色（无数据国家 / 色阶 / 描边 / 图例，此前是一块刺眼的亮色地图）；规则列表上传箭头暗色误用蓝色致上下行不可分；后端健康按钮 hover 与异常徽标补齐 dark 变体
+- **Active Policy 白名单不生效**：`UnifiedRuleChainFlow` 的 memo 比较器漏比 `visibleRuleNames`，首屏后白名单一直是旧值
+
+### 优化
+
+- **规则链路图查询降复杂度**：realtime 合并从 O(R×N) 的逐条 `findIndex` 改为 Map 合并；DAG 源数据按流量取 Top-N（`RULE_CHAIN_FLOW_MAX_ROWS`，默认 2000）而非全表扫描；去掉每次广播对 realtime 规则链路表的整表深拷贝
+- **WebSocket 广播并发化 + 出站背压**：广播负载并发预取（此前逐客户端串行 await）；出站缓冲超过 `WS_MAX_BUFFERED_BYTES`（默认 4MB）的慢客户端跳过本轮推送，防止内存被单个慢连接拖爆，指标行新增 `backpressure_skips`
+- **删除四个从未被查询计划使用的表达式索引**（`total_download + total_upload`），消除四张最热表的无谓写放大；存量库启动时自动 DROP
+- **写路径唯一化**：删除与批量实现漂移已久且无生产调用方的单条写路径，`updateTrafficStats` 现在是批量路径的一层包装
+
+[#68]: https://github.com/foru17/neko-master/pull/68
+
 ## [1.3.9] - 2026-06-23
 
 ### 修复
