@@ -972,6 +972,18 @@ neko-master/
 - **国际化**: next-intl（中/英）
 - **部署**: Docker + Docker Compose
 
+## 🤝 参与贡献
+
+欢迎贡献！
+
+- 🐛 [提交 Bug](https://github.com/foru17/neko-master/issues/new)
+- 💡 [功能建议](https://github.com/foru17/neko-master/issues/new)
+- 🔧 [贡献代码](https://github.com/foru17/neko-master/pulls)
+
+提 PR 前请阅读 [CONTRIBUTING.zh.md](./CONTRIBUTING.zh.md)（开发流程、检查项、i18n/暗色模式要求）。
+
+**使用 AI 编码工具开发？**（Claude Code、Copilot、Cursor、Codex 等）让它先读 [AGENTS.md](./AGENTS.md)——编码规范、关键契约与项目地图——以及 [`.claude/skills/`](./.claude/skills/) 里的任务级流程指南。Claude Code 会自动加载两者。
+
 ## 📄 许可证
 
 MIT License © 2024 [foru17](https://github.com/foru17)

@@ -1,12 +1,25 @@
 # AGENTS.md
 
-Guidance for coding agents working in this monorepo.
+Guidance for coding agents working in this monorepo. This file is the single source of truth for agent guidance — `CLAUDE.md` and `.github/copilot-instructions.md` are thin pointers to it.
 
 ## Scope and Priorities
 
 1. Follow this file for repo-specific workflows and conventions.
 2. Follow direct user instructions over this file when they conflict.
 3. Keep changes minimal, targeted, and consistent with existing code.
+
+## Skills (task-specific workflow guides)
+
+Reusable process checklists live in `.claude/skills/*/SKILL.md` (plain Markdown — usable by any tool; Claude Code loads them automatically). Consult the matching one BEFORE starting these task types:
+
+| Skill | When to use |
+|---|---|
+| [`verify-changes`](./.claude/skills/verify-changes/SKILL.md) | After any edit — minimal check set per touched area |
+| [`add-stats-dimension`](./.claude/skills/add-stats-dimension/SKILL.md) | Any schema / stats-table / write-path change (several registries must change together) |
+| [`release`](./.claude/skills/release/SKILL.md) | Version bumps, CHANGELOG, tagging, CI verification |
+| [`ui-conventions`](./.claude/skills/ui-conventions/SKILL.md) | Any UI change — i18n, dark mode, three-state views |
+| [`db-conventions`](./.claude/skills/db-conventions/SKILL.md) | Queries, repositories, ClickHouse topology, debugging data drift |
+| [`agent-probe-dev`](./.claude/skills/agent-probe-dev/SKILL.md) | Anything under `apps/agent` (Go probe) |
 
 ## Repository Overview
 
@@ -15,8 +28,51 @@ Guidance for coding agents working in this monorepo.
 - Main apps:
   - `apps/web`: Next.js 16 + React 19 frontend.
   - `apps/collector`: Fastify + WebSocket + SQLite backend service.
+  - `apps/agent`: Go probe deployed on routers/servers (reports to the collector over HTTP).
 - Shared package:
   - `packages/shared`: shared TypeScript types and utility functions.
+
+## Project Map (key files)
+
+```
+apps/collector/src/
+  database/schema.ts                     # ALL table/index DDL (single source of truth)
+  database/repositories/
+    traffic-writer.repository.ts         # THE traffic write path (batchUpdateTrafficStats)
+    base.repository.ts                   # time keys, range routing (resolveFactTable), chain parsing
+    rule.repository.ts                   # rule stats + chain-flow DAG queries
+    backend.repository.ts                # backend CRUD + deleteBackendData table list
+    config.repository.ts                 # retention deletes, app_config
+  shared/utils/rule-name.ts              # buildRuleName — the rule naming contract
+  modules/collector/                     # gateway WS clients + BatchBuffer (30s flush)
+  modules/realtime/realtime.store.ts     # in-memory deltas between flushes
+  modules/websocket/websocket.server.ts  # web-client WS: subscriptions, broadcast, backpressure
+  modules/stats/stats.service.ts         # SQLite/ClickHouse read routing (*WithRouting)
+  modules/clickhouse/                    # CH writer/reader/config (parity with SQLite reads)
+  modules/app/app.ts                     # Fastify composition root + agent ingest endpoints
+apps/web/
+  lib/api.ts, lib/websocket.ts           # HTTP client + stats WS hook (backendId-tagged pushes)
+  lib/stats-query-keys.ts                # centralized React Query keys
+  messages/{zh,en}.json                  # i18n — every key in BOTH files
+  components/features/                   # domain components (rules/, countries/, backend/, stats/)
+  app/[locale]/dashboard/                # main dashboard route
+apps/agent/
+  internal/agent/runner.go               # main loop, retry/idempotency
+  nekoagent                              # POSIX-sh service manager (install/upgrade/systemd/procd)
+docs/
+  architecture(.en).md                   # system architecture
+  agent/                                 # probe docs (user-facing)
+  dev/                                   # internal analysis reports (not authoritative)
+```
+
+## Key Contracts (violating these has caused real regressions)
+
+1. **Rule naming**: multi-hop chains aggregate under the top-level policy group (last chain hop); only `buildRuleName` implements this. The web flow graph and gateway-rule matching key on it (regressed in v1.3.9 — see `docs/dev/deep-review-2026-07.md`).
+2. **One traffic write path**: `batchUpdateTrafficStats`, one atomic outer transaction. Never add a parallel write implementation.
+3. **Schema changes are multi-registry**: schema.ts + migration + retention + `deleteBackendData` + ClickHouse writer/reader parity + shared types (checklist: `add-stats-dimension` skill).
+4. **CSV column dedup** uses the delimiter-aware `INSTR(','||col||',', ','||@v||',')` pattern — never bare `INSTR`.
+5. **i18n + dark mode**: every user-facing string in both `messages/{zh,en}.json`; every light-palette Tailwind class has a `dark:` counterpart; inline SVG/chart colors switch on `resolvedTheme`.
+6. **Agent protocol**: payload changes bump `AgentProtocolVersion` (Go) and the collector's minimum in the same commit.
 
 ## Environment and Toolchain
 
@@ -168,14 +224,10 @@ Guidance for coding agents working in this monorepo.
 - Frontend-only changes: run web lint; also run web build for production-impacting changes.
 - Cross-package changes: run `pnpm lint` and `pnpm build` before final handoff when feasible.
 
-## Cursor/Copilot Rules Check
+## Related Entry Files
 
-- Checked for Cursor rules:
-  - `.cursor/rules/` -> not found
-  - `.cursorrules` -> not found
-- Checked for Copilot instructions:
-  - `.github/copilot-instructions.md` -> not found
-- If any of these files are added later, treat them as additional mandatory guidance.
+- `CLAUDE.md` (Claude Code) and `.github/copilot-instructions.md` (Copilot) are thin pointers to this file — keep them that way; add new guidance HERE, not there.
+- No `.cursor/rules/` or `.cursorrules` currently exist; if added later, they must also defer to this file.
 
 ## Agent Working Notes
 

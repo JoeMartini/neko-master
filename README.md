@@ -991,6 +991,10 @@ Contributions are welcome!
 - 💡 [Request Feature](https://github.com/foru17/neko-master/issues/new)
 - 🔧 [Contribute Code](https://github.com/foru17/neko-master/pulls)
 
+Before opening a PR, read [CONTRIBUTING.md](./CONTRIBUTING.md) (workflow, checks, i18n/dark-mode requirements).
+
+**Developing with an AI coding tool?** (Claude Code, Copilot, Cursor, Codex, ...) Point it at [AGENTS.md](./AGENTS.md) — conventions, key contracts, and the project map — plus the task-specific workflow guides in [`.claude/skills/`](./.claude/skills/). Claude Code picks both up automatically.
+
 ## 📄 License
 
 [MIT](LICENSE) © [foru17](https://github.com/foru17)

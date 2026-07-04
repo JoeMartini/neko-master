@@ -1,0 +1,12 @@
+# CLAUDE.md
+
+All repo guidance lives in [AGENTS.md](./AGENTS.md) — commands, conventions, key contracts, and the project map. Read it first.
+
+Reusable workflows are packaged as skills in [`.claude/skills/`](./.claude/skills/) (Claude Code loads them automatically):
+
+- `verify-changes` — minimal check set per touched area
+- `add-stats-dimension` — coupled-registry checklist for schema/stats changes
+- `release` — tag-driven release lines (v* Docker / agent-v* binaries)
+- `ui-conventions` — i18n, dark mode, three-state views
+- `db-conventions` — data-layer invariants (SQLite/ClickHouse)
+- `agent-probe-dev` — Go probe development and constraints

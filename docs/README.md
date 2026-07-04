@@ -2,6 +2,12 @@
 
 [中文](./README.zh.md) | **English**
 
+## For Developers & AI Tools
+
+- [AGENTS.md](../AGENTS.md) — single source of truth for coding conventions, key contracts, and the project map (Claude Code / Copilot entry files point here)
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — development workflow, PR requirements ([中文](../CONTRIBUTING.zh.md))
+- [Skills](../.claude/skills/) — task-specific workflow guides: `verify-changes`, `add-stats-dimension`, `release`, `ui-conventions`, `db-conventions`, `agent-probe-dev`
+
 ## Architecture
 
 - [System Architecture](./architecture.en.md) — end-to-end architecture, data flow, module design, ClickHouse integration

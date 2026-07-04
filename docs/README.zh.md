@@ -2,6 +2,12 @@
 
 **中文** | [English](./README.md)
 
+## 开发者与 AI 工具
+
+- [AGENTS.md](../AGENTS.md) — 编码规范、关键契约与项目地图的唯一事实源（Claude Code / Copilot 入口文件均指向它）
+- [CONTRIBUTING.zh.md](../CONTRIBUTING.zh.md) — 开发流程与 PR 要求（[English](../CONTRIBUTING.md)）
+- [Skills](../.claude/skills/) — 任务级流程指南：`verify-changes`、`add-stats-dimension`、`release`、`ui-conventions`、`db-conventions`、`agent-probe-dev`
+
 ## 架构
 
 - [系统架构](./architecture.md) — 端到端架构、数据流、模块设计、ClickHouse 集成

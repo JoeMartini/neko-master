@@ -62,5 +62,7 @@ next-env.d.ts
 
 # AI dev logs
 .specstory/
-.claude/
+# .claude is ignored except for shared project skills
+.claude/*
+!.claude/skills/
 .refactoring_docs/
