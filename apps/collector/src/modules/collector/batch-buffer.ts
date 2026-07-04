@@ -11,7 +11,7 @@ import {
   type TrafficWriteOutcome,
 } from "../clickhouse/clickhouse.writer.js";
 import { buildRuleName } from "../../shared/utils/rule-name.js";
-import { shouldSkipSqliteStatsWrites } from "../stats/stats-write-mode.js";
+import { shouldSkipSqliteStatsWrites, shouldReduceSqliteWrites } from "../stats/stats-write-mode.js";
 
 export interface TrafficUpdate {
   domain: string;
@@ -171,7 +171,7 @@ export class BatchBuffer {
 
     if (hasTrafficUpdates) {
       try {
-        const reduceSQLiteWrites = clickHouseWriter.isHealthy() && process.env.CH_DISABLE_SQLITE_REDUCTION !== '1';
+        const reduceSQLiteWrites = shouldReduceSqliteWrites(clickHouseWriter.isHealthy());
         if (!skipSqliteStatsWrites) {
           db.batchUpdateTrafficStats(backendId, updates, reduceSQLiteWrites);
         }
