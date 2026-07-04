@@ -1,8 +1,8 @@
 /**
  * Traffic Writer Repository
  *
- * Handles writing traffic data to the database. Contains the two main
- * write methods: updateTrafficStats (single) and batchUpdateTrafficStats (batch).
+ * Handles writing traffic data to the database. batchUpdateTrafficStats is
+ * the single write implementation; updateTrafficStats wraps it for one-off writes.
  */
 import type Database from 'better-sqlite3';
 import { BaseRepository } from './base.repository.js';
@@ -23,9 +23,6 @@ export interface TrafficUpdate {
 }
 
 export class TrafficWriterRepository extends BaseRepository {
-  // Cached prepared statements for single-write path (avoids re-compilation per call)
-  private _singleStmts: ReturnType<TrafficWriterRepository['prepareSingleStmts']> | null = null;
-
   constructor(db: Database.Database) {
     super(db);
   }
@@ -36,160 +33,13 @@ export class TrafficWriterRepository extends BaseRepository {
     return Math.max(0, Math.floor(safe));
   }
 
-  private prepareSingleStmts() {
-    return {
-      domainUpsert: this.db.prepare(`
-        INSERT INTO domain_stats (backend_id, domain, ips, total_upload, total_download, total_connections, last_seen, rules, chains)
-        VALUES (@backendId, @domain, @ip, @upload, @download, 1, @timestamp, @rule, @chain)
-        ON CONFLICT(backend_id, domain) DO UPDATE SET
-          ips = CASE WHEN domain_stats.ips IS NULL THEN @ip WHEN INSTR(domain_stats.ips, @ip) > 0 THEN domain_stats.ips ELSE domain_stats.ips || ',' || @ip END,
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp,
-          rules = CASE WHEN domain_stats.rules IS NULL THEN @rule WHEN INSTR(domain_stats.rules, @rule) > 0 THEN domain_stats.rules ELSE domain_stats.rules || ',' || @rule END,
-          chains = CASE WHEN domain_stats.chains IS NULL THEN @chain WHEN INSTR(domain_stats.chains, @chain) > 0 THEN domain_stats.chains ELSE domain_stats.chains || ',' || @chain END
-      `),
-      ipUpsert: this.db.prepare(`
-        INSERT INTO ip_stats (backend_id, ip, domains, total_upload, total_download, total_connections, last_seen, chains, rules)
-        VALUES (@backendId, @ip, @domain, @upload, @download, 1, @timestamp, @chain, @rule)
-        ON CONFLICT(backend_id, ip) DO UPDATE SET
-          domains = CASE WHEN ip_stats.domains IS NULL THEN @domain WHEN INSTR(ip_stats.domains, @domain) > 0 THEN ip_stats.domains ELSE ip_stats.domains || ',' || @domain END,
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp,
-          chains = CASE WHEN ip_stats.chains IS NULL THEN @chain WHEN INSTR(ip_stats.chains, @chain) > 0 THEN ip_stats.chains ELSE ip_stats.chains || ',' || @chain END,
-          rules = CASE WHEN ip_stats.rules IS NULL THEN @rule WHEN INSTR(ip_stats.rules, @rule) > 0 THEN ip_stats.rules ELSE ip_stats.rules || ',' || @rule END
-      `),
-      proxyUpsert: this.db.prepare(`
-        INSERT INTO proxy_stats (backend_id, chain, total_upload, total_download, total_connections, last_seen)
-        VALUES (@backendId, @chain, @upload, @download, 1, @timestamp)
-        ON CONFLICT(backend_id, chain) DO UPDATE SET
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp
-      `),
-      ruleUpsert: this.db.prepare(`
-        INSERT INTO rule_stats (backend_id, rule, final_proxy, total_upload, total_download, total_connections, last_seen)
-        VALUES (@backendId, @rule, @finalProxy, @upload, @download, 1, @timestamp)
-        ON CONFLICT(backend_id, rule) DO UPDATE SET
-          final_proxy = @finalProxy, total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp
-      `),
-      ruleChainUpsert: this.db.prepare(`
-        INSERT INTO rule_chain_traffic (backend_id, rule, chain, total_upload, total_download, total_connections, last_seen)
-        VALUES (@backendId, @rule, @chain, @upload, @download, 1, @timestamp)
-        ON CONFLICT(backend_id, rule, chain) DO UPDATE SET
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp
-      `),
-      ruleDomainUpsert: this.db.prepare(`
-        INSERT INTO rule_domain_traffic (backend_id, rule, domain, total_upload, total_download, total_connections, last_seen)
-        VALUES (@backendId, @rule, @domain, @upload, @download, 1, @timestamp)
-        ON CONFLICT(backend_id, rule, domain) DO UPDATE SET
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp
-      `),
-      ruleIpUpsert: this.db.prepare(`
-        INSERT INTO rule_ip_traffic (backend_id, rule, ip, total_upload, total_download, total_connections, last_seen)
-        VALUES (@backendId, @rule, @ip, @upload, @download, 1, @timestamp)
-        ON CONFLICT(backend_id, rule, ip) DO UPDATE SET
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp
-      `),
-      ruleProxyInsert: this.db.prepare(`INSERT OR IGNORE INTO rule_proxy_map (backend_id, rule, proxy) VALUES (@backendId, @rule, @proxy)`),
-      hourlyUpsert: this.db.prepare(`
-        INSERT INTO hourly_stats (backend_id, hour, upload, download, connections) VALUES (@backendId, @hour, @upload, @download, 1)
-        ON CONFLICT(backend_id, hour) DO UPDATE SET upload = upload + @upload, download = download + @download, connections = connections + 1
-      `),
-      minuteUpsert: this.db.prepare(`
-        INSERT INTO minute_stats (backend_id, minute, upload, download, connections) VALUES (@backendId, @minute, @upload, @download, 1)
-        ON CONFLICT(backend_id, minute) DO UPDATE SET upload = upload + @upload, download = download + @download, connections = connections + 1
-      `),
-      domainProxyUpsert: this.db.prepare(`
-        INSERT INTO domain_proxy_stats (backend_id, domain, chain, total_upload, total_download, total_connections, last_seen)
-        VALUES (@backendId, @domain, @chain, @upload, @download, 1, @timestamp)
-        ON CONFLICT(backend_id, domain, chain) DO UPDATE SET
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp
-      `),
-      ipProxyUpsert: this.db.prepare(`
-        INSERT INTO ip_proxy_stats (backend_id, ip, chain, total_upload, total_download, total_connections, last_seen, domains)
-        VALUES (@backendId, @ip, @chain, @upload, @download, 1, @timestamp, @domain)
-        ON CONFLICT(backend_id, ip, chain) DO UPDATE SET
-          total_upload = total_upload + @upload, total_download = total_download + @download,
-          total_connections = total_connections + 1, last_seen = @timestamp,
-          domains = CASE WHEN ip_proxy_stats.domains IS NULL THEN @domain WHEN @domain = 'unknown' THEN ip_proxy_stats.domains
-            WHEN INSTR(ip_proxy_stats.domains, @domain) > 0 THEN ip_proxy_stats.domains ELSE ip_proxy_stats.domains || ',' || @domain END
-      `),
-      minuteDimUpsert: this.db.prepare(`
-        INSERT INTO minute_dim_stats (backend_id, minute, domain, ip, source_ip, chain, rule, upload, download, connections)
-        VALUES (@backendId, @minute, @domain, @ip, @sourceIP, @chain, @rule, @upload, @download, 1)
-        ON CONFLICT(backend_id, minute, domain, ip, source_ip, chain, rule) DO UPDATE SET
-          upload = upload + @upload, download = download + @download, connections = connections + 1
-      `),
-      hourlyDimUpsert: this.db.prepare(`
-        INSERT INTO hourly_dim_stats (backend_id, hour, domain, ip, source_ip, chain, rule, upload, download, connections)
-        VALUES (@backendId, @hour, @domain, @ip, @sourceIP, @chain, @rule, @upload, @download, 1)
-        ON CONFLICT(backend_id, hour, domain, ip, source_ip, chain, rule) DO UPDATE SET
-          upload = upload + @upload, download = download + @download, connections = connections + 1
-      `),
-    };
-  }
-
-  private get singleStmts() {
-    if (!this._singleStmts) {
-      this._singleStmts = this.prepareSingleStmts();
-    }
-    return this._singleStmts;
-  }
-
+  /**
+   * Single-update convenience wrapper. All writes go through the batch path
+   * so there is exactly one write implementation to keep in sync with the
+   * schema (device tables, event-time bucketing, CSV caps, connections).
+   */
   updateTrafficStats(backendId: number, update: TrafficUpdate) {
-    const now = new Date();
-    const timestamp = now.toISOString();
-    const hour = timestamp.slice(0, 13) + ':00:00';
-    const minute = timestamp.slice(0, 16) + ':00';
-
-    if (update.upload === 0 && update.download === 0) return;
-
-    const ruleName = buildRuleName(update);
-    const finalProxy = update.chains.length > 0 ? update.chains[0] : 'DIRECT';
-    const fullChain = update.chains.join(' > ') || update.chain || 'DIRECT';
-    const s = this.singleStmts;
-
-    const transaction = this.db.transaction(() => {
-      const domainName = update.domain || 'unknown';
-      if (domainName !== 'unknown') {
-        s.domainUpsert.run({ backendId, domain: domainName, ip: update.ip, upload: update.upload, download: update.download, timestamp, rule: ruleName, chain: fullChain });
-      }
-
-      s.ipUpsert.run({ backendId, ip: update.ip, domain: update.domain || 'unknown', upload: update.upload, download: update.download, timestamp, chain: fullChain, rule: ruleName });
-      s.proxyUpsert.run({ backendId, chain: fullChain, upload: update.upload, download: update.download, timestamp });
-      s.ruleUpsert.run({ backendId, rule: ruleName, finalProxy, upload: update.upload, download: update.download, timestamp });
-      s.ruleChainUpsert.run({ backendId, rule: ruleName, chain: fullChain, upload: update.upload, download: update.download, timestamp });
-
-      if (domainName !== 'unknown') {
-        s.ruleDomainUpsert.run({ backendId, rule: ruleName, domain: domainName, upload: update.upload, download: update.download, timestamp });
-      }
-
-      s.ruleIpUpsert.run({ backendId, rule: ruleName, ip: update.ip, upload: update.upload, download: update.download, timestamp });
-
-      if (update.chains.length > 1) {
-        s.ruleProxyInsert.run({ backendId, rule: ruleName, proxy: update.chains[0] });
-      }
-
-      s.hourlyUpsert.run({ backendId, hour, upload: update.upload, download: update.download });
-      s.minuteUpsert.run({ backendId, minute, upload: update.upload, download: update.download });
-
-      if (domainName !== 'unknown') {
-        s.domainProxyUpsert.run({ backendId, domain: domainName, chain: fullChain, upload: update.upload, download: update.download, timestamp });
-      }
-
-      s.ipProxyUpsert.run({ backendId, ip: update.ip, chain: fullChain, upload: update.upload, download: update.download, timestamp, domain: update.domain || 'unknown' });
-
-      // Write to minute_dim_stats and hourly_dim_stats
-      const dimParams = { backendId, domain: update.domain || '', ip: update.ip || '', sourceIP: update.sourceIP || '', chain: fullChain, rule: ruleName, upload: update.upload, download: update.download };
-      s.minuteDimUpsert.run({ ...dimParams, minute });
-      s.hourlyDimUpsert.run({ ...dimParams, hour });
-    });
-
-    transaction();
+    this.batchUpdateTrafficStats(backendId, [update]);
   }
 
   batchUpdateTrafficStats(backendId: number, updates: TrafficUpdate[], reduceWrites = false) {
