@@ -248,7 +248,7 @@ describe('TrafficWriterRepository', () => {
       expect(summary.totalConnections).toBe(1);
     });
 
-    it('should use rule and rulePayload instead of treating the last chain hop as the rule', () => {
+    it('should key mihomo multi-hop traffic by the top-level policy group, not the raw rule type', () => {
       db.batchUpdateTrafficStats(backendId, [
         {
           domain: 'media.example',
@@ -266,15 +266,36 @@ describe('TrafficWriterRepository', () => {
 
       const rules = db.getRuleStats(backendId);
       expect(rules).toHaveLength(1);
-      expect(rules[0].rule).toBe('RULE-SET(OpenAI)');
+      expect(rules[0].rule).toBe('🔯 大流量节点');
       expect(rules[0].finalProxy).toBe('香港 01');
 
       const ruleProxyMap = db.getRuleProxyMap(backendId);
       expect(ruleProxyMap).toHaveLength(1);
       expect(ruleProxyMap[0]).toEqual({
-        rule: 'RULE-SET(OpenAI)',
+        rule: '🔯 大流量节点',
         proxies: ['香港 01'],
       });
+    });
+
+    it('should keep rule detail as the key only for single-hop chains (DIRECT-target rules)', () => {
+      db.batchUpdateTrafficStats(backendId, [
+        {
+          domain: 'cn.example',
+          ip: '114.114.114.114',
+          chain: 'DIRECT',
+          chains: ['DIRECT'],
+          rule: 'RuleSet',
+          rulePayload: 'ChinaDomain',
+          upload: 10,
+          download: 20,
+          sourceIP: '192.168.1.9',
+          timestampMs: Date.now(),
+        },
+      ]);
+
+      const rules = db.getRuleStats(backendId);
+      expect(rules).toHaveLength(1);
+      expect(rules[0].rule).toBe('RuleSet(ChinaDomain)');
     });
 
     it('should preserve Surge rule names when the last chain hop already matches the resolved rule', () => {

@@ -4,6 +4,7 @@ import fs from 'fs';
 import { randomBytes } from 'crypto';
 import { normalizeGeoIP, type Connection, type DomainStats, type IPStats, type HourlyStats, type ProxyStats, type RuleStats, type ProxyTrafficStats, type DeviceStats } from '@neko-master/shared';
 import { getAllSchemaStatements } from '../../database/schema.js';
+import { cleanupMisattributedRuleNames } from '../../database/rule-name-cleanup.js';
 import {
   AuthRepository,
   SurgeRepository,
@@ -166,6 +167,13 @@ export class StatsDatabase {
 
     // Migrate existing data if needed (from single-backend schema)
     this.migrateIfNeeded();
+
+    // One-time cleanup: remap v1.3.9-era rule-type keys back to policy groups
+    try {
+      cleanupMisattributedRuleNames(this.db);
+    } catch (error) {
+      console.error('[DB] Rule name cleanup failed:', error);
+    }
 
     // Backfill hourly tables from minute data (one-time)
     this.backfillHourlyTables();
