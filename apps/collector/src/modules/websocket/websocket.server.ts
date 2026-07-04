@@ -197,7 +197,15 @@ export class StatsWebSocketServer {
     pagedCalls: 0,
     broadcastCalls: 0,
     broadcastSentClients: 0,
+    backpressureSkips: 0,
   };
+
+  // Skip pushing to clients whose outbound socket buffer is already backed
+  // up — an unbounded buffer on a slow client grows the Node heap forever.
+  private readonly maxBufferedBytes = Math.max(
+    64 * 1024,
+    Number.parseInt(process.env.WS_MAX_BUFFERED_BYTES || '', 10) || 4 * 1024 * 1024,
+  );
 
   constructor(port: number, db: StatsDatabase, statsService: StatsService) {
     this.port = port;
@@ -1219,6 +1227,11 @@ export class StatsWebSocketServer {
     const jsonCache = new Map<string, Promise<string | null>>();
     const ts = new Date().toISOString();
 
+    // Phase 1: start the stats fetch for every eligible client up front so
+    // unique query combos resolve concurrently instead of serially awaiting
+    // one combo per client.
+    const pendingSends: Array<{ ws: WebSocket; clientInfo: ClientInfo; json: Promise<string | null> }> = [];
+
     for (const [ws, clientInfo] of this.clients) {
       try {
         if (ws.readyState !== WebSocket.OPEN) continue;
@@ -1294,8 +1307,25 @@ export class StatsWebSocketServer {
           );
         }
 
-        const json = await jsonCache.get(cacheKey);
+        pendingSends.push({ ws, clientInfo, json: jsonCache.get(cacheKey)! });
+      } catch (err) {
+        console.error('[WebSocket] Error preparing broadcast for client:', err);
+      }
+    }
+
+    // Phase 2: await each payload (already resolving concurrently) and send.
+    for (const { ws, clientInfo, json: jsonPromise } of pendingSends) {
+      try {
+        const json = await jsonPromise;
         if (!json) continue;
+        if (ws.readyState !== WebSocket.OPEN) continue;
+
+        if (ws.bufferedAmount > this.maxBufferedBytes) {
+          // Client isn't draining; skip this round (lastSentAt untouched, so
+          // it gets the next broadcast once the buffer clears).
+          this.wsMetrics.backpressureSkips += 1;
+          continue;
+        }
 
         ws.send(json);
         clientInfo.lastSentAt = now;
@@ -1336,7 +1366,7 @@ export class StatsWebSocketServer {
       : 0;
 
     console.info(
-      `[WebSocket Metrics] subscribe_total=${this.wsMetrics.subscribeTotal} subscribe_changed=${this.wsMetrics.subscribeChanged} subscribe_noop=${this.wsMetrics.subscribeNoop} subscribe_qps=${subscribeQps.toFixed(2)} get_stats_calls=${this.wsMetrics.getStatsCalls} get_stats_qps=${getStatsQps.toFixed(2)} full_summary_calls=${this.wsMetrics.fullSummaryCalls} base_cache_hit=${this.wsMetrics.baseCacheHit} base_cache_miss=${this.wsMetrics.baseCacheMiss} base_cache_hit_rate=${cacheHitRate.toFixed(1)}% trend_calls=${this.wsMetrics.trendCalls} detail_calls=${this.wsMetrics.detailCalls} paged_calls=${this.wsMetrics.pagedCalls} broadcast_calls=${this.wsMetrics.broadcastCalls} broadcast_sent_clients=${this.wsMetrics.broadcastSentClients} window_sec=${elapsedSec.toFixed(1)}`,
+      `[WebSocket Metrics] subscribe_total=${this.wsMetrics.subscribeTotal} subscribe_changed=${this.wsMetrics.subscribeChanged} subscribe_noop=${this.wsMetrics.subscribeNoop} subscribe_qps=${subscribeQps.toFixed(2)} get_stats_calls=${this.wsMetrics.getStatsCalls} get_stats_qps=${getStatsQps.toFixed(2)} full_summary_calls=${this.wsMetrics.fullSummaryCalls} base_cache_hit=${this.wsMetrics.baseCacheHit} base_cache_miss=${this.wsMetrics.baseCacheMiss} base_cache_hit_rate=${cacheHitRate.toFixed(1)}% trend_calls=${this.wsMetrics.trendCalls} detail_calls=${this.wsMetrics.detailCalls} paged_calls=${this.wsMetrics.pagedCalls} broadcast_calls=${this.wsMetrics.broadcastCalls} broadcast_sent_clients=${this.wsMetrics.broadcastSentClients} backpressure_skips=${this.wsMetrics.backpressureSkips} window_sec=${elapsedSec.toFixed(1)}`,
     );
 
     this.wsMetricsWindowStartedAt = now;
@@ -1353,6 +1383,7 @@ export class StatsWebSocketServer {
       pagedCalls: 0,
       broadcastCalls: 0,
       broadcastSentClients: 0,
+      backpressureSkips: 0,
     };
   }
 
