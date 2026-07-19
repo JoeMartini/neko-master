@@ -482,14 +482,19 @@ cmd_disable_autostart() {
 
 # Query GitHub releases API for the latest agent tag (e.g. "agent-v0.2.0").
 # Returns empty string on failure — callers must handle this gracefully.
+#
+# The repo publishes BOTH main-app (v*) and agent (agent-v*) releases into the
+# same namespace, and either may be marked "latest". So we must NOT use the
+# releases/latest endpoint — it can resolve to a main-app release that carries
+# no agent binaries. Instead list recent releases and pick the newest agent-v*.
 get_latest_remote_tag() {
   repo="${1:-$AGENT_REPO}"
-  api_url="https://api.github.com/repos/${repo}/releases/latest"
+  api_url="https://api.github.com/repos/${repo}/releases?per_page=100"
   tag=""
   if command -v curl >/dev/null 2>&1; then
-    tag="$(curl -fsSL "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4; exit}')"
+    tag="$(curl -fsSL "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4}' | grep '^agent-v' | head -1)"
   elif command -v wget >/dev/null 2>&1; then
-    tag="$(wget -qO- "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4; exit}')"
+    tag="$(wget -qO- "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4}' | grep '^agent-v' | head -1)"
   fi
   printf '%s\n' "$tag"
 }
@@ -548,7 +553,14 @@ do_download_binary() {
   arch="$3"
 
   if [ "$version_arg" = "latest" ]; then
-    release_path="releases/latest/download"
+    # Resolve to a concrete agent-v* tag; releases/latest may be a main-app
+    # release with no agent binaries (→ 404).
+    tag="$(get_latest_remote_tag "$AGENT_REPO")"
+    if [ -z "$tag" ]; then
+      err "could not determine latest agent version from GitHub API"
+      return 1
+    fi
+    release_path="releases/download/${tag}"
     asset="neko-agent_${os}_${arch}.tar.gz"
   else
     # normalise: accept bare "0.2.0" or full "agent-v0.2.0"

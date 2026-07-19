@@ -102,14 +102,19 @@ normalize_arch() {
 
 # Query GitHub releases API for the latest agent tag (e.g. "agent-v0.2.0").
 # Returns empty string on failure.
+#
+# The repo publishes BOTH main-app (v*) and agent (agent-v*) releases into the
+# same namespace, and either may be marked "latest". So we must NOT use the
+# releases/latest endpoint — it can resolve to a main-app release that carries
+# no agent binaries. Instead list recent releases and pick the newest agent-v*.
 get_latest_remote_tag() {
 	repo="${1:-foru17/neko-master}"
-	api_url="https://api.github.com/repos/${repo}/releases/latest"
+	api_url="https://api.github.com/repos/${repo}/releases?per_page=100"
 	tag=""
 	if command -v curl >/dev/null 2>&1; then
-		tag="$(curl -fsSL "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4; exit}')"
+		tag="$(curl -fsSL "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4}' | grep '^agent-v' | head -1)"
 	elif command -v wget >/dev/null 2>&1; then
-		tag="$(wget -qO- "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4; exit}')"
+		tag="$(wget -qO- "$api_url" 2>/dev/null | awk -F'"' '/"tag_name"/{print $4}' | grep '^agent-v' | head -1)"
 	fi
 	printf '%s\n' "$tag"
 }
@@ -236,7 +241,8 @@ main() {
 
 		# Determine target plain version (strip "agent-v" prefix)
 		if [ "$NEKO_AGENT_VERSION" = "latest" ]; then
-			remote_tag="$(get_latest_remote_tag "$NEKO_AGENT_REPO")"
+			resolved_tag="$(get_latest_remote_tag "$NEKO_AGENT_REPO")"
+			remote_tag="$resolved_tag"
 			target_version="${remote_tag#agent-v}"
 		else
 			target_version="${NEKO_AGENT_VERSION#agent-v}"
@@ -262,7 +268,16 @@ main() {
 	show_plan
 
 	if [ "$NEKO_AGENT_VERSION" = "latest" ]; then
-		release_path="releases/latest/download"
+		# Resolve "latest" to a concrete agent-v* tag. releases/latest/download is
+		# unsafe here: it points at whatever release GitHub marks latest, which may
+		# be a main-app v* release with no agent binaries (→ 404).
+		resolved_tag="${resolved_tag:-$(get_latest_remote_tag "$NEKO_AGENT_REPO")}"
+		if [ -z "$resolved_tag" ]; then
+			echo "[neko-agent] error: could not determine latest agent version from GitHub API" >&2
+			echo "[neko-agent] hint: check network access or pin a version: NEKO_AGENT_VERSION=agent-vX.Y.Z" >&2
+			exit 1
+		fi
+		release_path="releases/download/${resolved_tag}"
 		asset="neko-agent_${os}_${arch}.tar.gz"
 	else
 		release_path="releases/download/${NEKO_AGENT_VERSION}"
