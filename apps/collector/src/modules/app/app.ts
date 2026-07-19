@@ -250,9 +250,16 @@ export async function createApp(options: AppOptions) {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  // Security: when CORS_ORIGIN is unset, deny cross-origin requests instead of
+  // reflecting any Origin with credentials — that combination let any website
+  // read a logged-in user's data cross-site. Same-origin deployments (the
+  // dashboard and API served from one origin, the default Docker setup) are
+  // unaffected because browsers do not apply CORS to same-origin requests.
+  // To allow a separate dashboard origin, set CORS_ORIGIN explicitly.
+  const hasExplicitOrigins = corsOrigins.length > 0;
   await app.register(cors, {
-    origin: corsOrigins.length > 0 ? corsOrigins : true,
-    credentials: true,
+    origin: hasExplicitOrigins ? corsOrigins : false,
+    credentials: hasExplicitOrigins,
   });
 
   app.addHook('onSend', async (_request, reply) => {

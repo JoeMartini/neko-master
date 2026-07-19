@@ -237,6 +237,11 @@ export class BackendService {
       this.attachHealthStatus({
         ...backend,
         url: isShowcase ? maskUrl(backend.url) : backend.url,
+        // Never expose the stored upstream/agent token in list/read responses.
+        // The edit form treats an empty token as "unchanged" on submit, so
+        // blanking it here does not break editing but stops leaking every
+        // backend's plaintext secret to any authenticated dashboard load.
+        token: '',
       })
     );
   }
@@ -251,9 +256,11 @@ export class BackendService {
     }
     const isShowcase = this.authService.isShowcaseMode();
 
-    return this.attachHealthStatus({ 
+    return this.attachHealthStatus({
       ...backend,
       url: isShowcase ? maskUrl(backend.url) : backend.url,
+      // See getAllBackends: never expose the stored token in read responses.
+      token: '',
     });
   }
 
@@ -268,6 +275,11 @@ export class BackendService {
       this.attachHealthStatus({
         ...backend,
         url: isShowcase ? maskUrl(backend.url) : backend.url,
+        // Never expose the stored upstream/agent token in list/read responses.
+        // The edit form treats an empty token as "unchanged" on submit, so
+        // blanking it here does not break editing but stops leaking every
+        // backend's plaintext secret to any authenticated dashboard load.
+        token: '',
       })
     );
   }
