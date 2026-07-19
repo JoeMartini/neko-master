@@ -171,6 +171,31 @@ export async function createApp(options: AppOptions) {
         }
       }
 
+      // Durable fallback: SQLite writes were skipped because ClickHouse was
+      // considered healthy, but the ClickHouse write failed. Persist the
+      // snapshot to SQLite so the data is not silently lost (buffer is already
+      // cleared by flush()). Mirrors gateway/surge collectors. See C1.
+      if (
+        stats.hasTrafficUpdates &&
+        stats.trafficOk &&
+        stats.sqliteSkipped &&
+        (!trafficDetailOk || !trafficAggOk)
+      ) {
+        try {
+          db.batchUpdateTrafficStats(backendId, stats.updates, false);
+          trafficDetailOk = true;
+          trafficAggOk = true;
+          console.warn(
+            `[Agent:${backendId}] ClickHouse traffic write failed; persisted ${stats.updates.length} updates to SQLite as fallback`,
+          );
+        } catch (fallbackErr) {
+          console.error(
+            `[Agent:${backendId}] SQLite fallback for traffic also failed; retaining realtime store`,
+            fallbackErr,
+          );
+        }
+      }
+
       if (stats.hasTrafficUpdates && stats.trafficOk) {
         if (trafficDetailOk && trafficAggOk) {
           realtimeStore.clearTraffic(backendId);
@@ -188,8 +213,33 @@ export async function createApp(options: AppOptions) {
       if (stats.pendingCountryWrite) {
         try {
           await stats.pendingCountryWrite;
-        } catch {
+        } catch (err) {
           countryWriteOk = false;
+          console.warn(
+            `[Agent:${backendId}] ClickHouse country write failed, keeping realtime country store`,
+            err,
+          );
+        }
+      }
+
+      // Durable fallback for country stats: same rationale as traffic above. See C1.
+      if (
+        stats.hasCountryUpdates &&
+        stats.countryOk &&
+        stats.sqliteSkipped &&
+        !countryWriteOk
+      ) {
+        try {
+          db.batchUpdateCountryStats(backendId, stats.countryUpdates);
+          countryWriteOk = true;
+          console.warn(
+            `[Agent:${backendId}] ClickHouse country write failed; persisted to SQLite as fallback`,
+          );
+        } catch (fallbackErr) {
+          console.error(
+            `[Agent:${backendId}] SQLite fallback for country also failed; retaining realtime store`,
+            fallbackErr,
+          );
         }
       }
 
@@ -199,6 +249,13 @@ export async function createApp(options: AppOptions) {
     } finally {
       agentIsFlushing.set(backendId, false);
     }
+
+    // Periodic memory bounds check on realtime store. Without this the
+    // per-backend realtime maps grow unbounded while ClickHouse writes keep
+    // failing (the buffer clears each flush but the realtime store is retained
+    // for the UI), OOM-ing long-lived router/agent deployments. Mirrors the
+    // gateway/surge collectors. See C2.
+    realtimeStore.pruneIfNeeded(backendId);
   };
 
   const agentFlushIntervalId = setInterval(() => {
