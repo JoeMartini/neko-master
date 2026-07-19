@@ -5,6 +5,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
+## [1.4.0] - 2026-07-19
+
+本版本源自第二次外部深度代码评审，逐条证伪核验后修复其中的高优先级问题：数据正确性、安全默认值、错误可见性，以及一处当前正在发生的安装故障。
+
+### 修复
+
+- **Agent 安装/升级 404**：`install.sh` 与 `nekoagent` 此前用 GitHub `releases/latest` 解析下载地址，而该端点会命中不带 agent 二进制的主应用 `v*` release，导致新装和升级全部 404。改为列出 releases 并筛选最新的 `agent-v*` tag，再从该具体 tag 下载。
+- **Agent 模式 CH_ONLY 静默丢数据**：当 ClickHouse 被判定健康而跳过 SQLite 写入、随后 ClickHouse 写入失败时，缓冲区已清空、数据从内存与磁盘同时消失。现补齐与 gateway/surge 一致的 SQLite 兜底回写（流量与国家维度）。
+- **Agent 模式 realtime store 无界增长**：agent 路径此前从不调用 `pruneIfNeeded`，ClickHouse 持续故障时内存无限累积，长时间运行的软路由/网关部署会 OOM。现每次 flush 后修剪。
+- **统计错误态缺失**：仪表盘 collector 请求失败时静默显示为"暂无数据"——对监控工具是最糟的失败模式。KPI 卡片现会在查询失败时显示错误提示。
+
+### 安全
+
+- **CORS 默认拒绝跨源**：未设置 `CORS_ORIGIN` 时，此前会反射任意 Origin 且携带凭证（`credentials: true`），任何网站都能借已登录用户的浏览器跨站读取流量数据。现默认拒绝跨源；同源部署（默认 Docker 形态）不受影响。**升级提示**：若你的仪表盘与 collector 部署在不同源，需显式设置 `CORS_ORIGIN`（见 `.env.example`），否则跨源请求将被拒绝。
+- **`GET /api/backends` 不再返回明文 token**：列表/读取接口此前原样返回存储的上游/agent token。现已剥离；编辑表单将空 token 视为"不修改"，编辑功能不受影响。
+
 ## [1.3.10] - 2026-07-04
 
 本版本源自一次全项目深度审查（架构 / 数据库 / 性能 / 前端 / 交互），集中修复其中的高危问题。完整审查报告见 `docs/dev/deep-review-2026-07.md`。

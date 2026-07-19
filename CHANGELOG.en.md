@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-19
+
+This release comes from a second external deep code review. Each finding was independently verified before fixing; the high-priority ones — data correctness, security defaults, error visibility, and a live install failure — are addressed here.
+
+### Fixed
+
+- **Agent install/upgrade 404**: `install.sh` and `nekoagent` resolved download URLs via GitHub `releases/latest`, which points at whatever release GitHub marks latest — including main-app `v*` releases that carry no agent binaries, so every fresh install and upgrade 404'd. They now list releases, pick the newest `agent-v*` tag, and download from that concrete tag.
+- **Silent data loss in agent CH_ONLY mode**: when SQLite writes were skipped (ClickHouse considered healthy) and the ClickHouse write then failed, the buffer was already cleared and data vanished from both memory and disk. A SQLite fallback (traffic + country) now persists the snapshot, matching the gateway/surge collectors.
+- **Unbounded realtime store growth in agent mode**: the agent path never called `pruneIfNeeded`, so the in-memory store grew without bound while ClickHouse kept failing — OOM on long-lived router/gateway deployments. It is now pruned each flush.
+- **Missing query error state**: on a collector failure the dashboard silently showed "no data" — the worst failure mode for a monitoring tool. KPI cards now render an error alert when a query fails.
+
+### Security
+
+- **CORS denies cross-origin by default**: with `CORS_ORIGIN` unset, the server previously reflected any Origin with `credentials: true`, letting any website read a logged-in user's traffic data cross-site. Cross-origin is now denied by default; same-origin deployments (the default Docker setup) are unaffected. **Upgrade note**: if your dashboard and collector run on different origins, set `CORS_ORIGIN` explicitly (see `.env.example`) or cross-origin requests will be rejected.
+- **`GET /api/backends` no longer returns plaintext tokens**: the list/read endpoints returned the stored upstream/agent token verbatim. It is now stripped; the edit form treats an empty token as "unchanged", so editing still works.
+
 ## [1.3.10] - 2026-07-04
 
 This release comes from a project-wide deep review (architecture / database / performance / frontend / UX) and fixes the high-risk findings. Full report: `docs/dev/deep-review-2026-07.md`.
