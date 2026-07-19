@@ -99,7 +99,8 @@
     "download": "下载",
     "upload": "上传",
     "tracked": "已追踪",
-    "unavailable": "等待后端恢复"
+    "unavailable": "等待后端恢复",
+    "loadErrorTitle": "统计数据加载失败"
   },
   "chart": {
     "trafficHistory": "流量趋势 (24小时)",

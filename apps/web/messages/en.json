@@ -99,7 +99,8 @@
     "download": "Download",
     "upload": "Upload",
     "tracked": "tracked",
-    "unavailable": "Waiting for backend"
+    "unavailable": "Waiting for backend",
+    "loadErrorTitle": "Failed to load statistics"
   },
   "chart": {
     "trafficHistory": "Traffic History (24h)",

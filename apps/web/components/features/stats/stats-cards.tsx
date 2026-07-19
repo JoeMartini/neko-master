@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { Download, Upload, Globe, Activity, Server, Route } from "lucide-react";
+import { Download, Upload, Globe, Activity, Server, Route, AlertTriangle } from "lucide-react";
 import { useTranslations, useLocale } from "next-intl";
 import { animate, motion, useTransform, useMotionValue } from "framer-motion";
 import { formatBytes, cn } from "@/lib/utils";
@@ -109,7 +109,7 @@ function AnimatedStatCard({
 
 // ---------- Main ----------
 
-export function StatsCards({ data, backendStatus, isLoading }: StatsCardsProps) {
+export function StatsCards({ data, backendStatus, isLoading, error }: StatsCardsProps) {
   const t = useTranslations("stats");
   const locale = useLocale();
   const formatCount = (n: number) => n.toLocaleString(locale);
@@ -161,6 +161,20 @@ export function StatsCards({ data, backendStatus, isLoading }: StatsCardsProps) 
       </div>
     </div>
   );
+
+  if (error && !isLoading) {
+    return (
+      <div
+        role="alert"
+        className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-destructive">{t("loadErrorTitle")}</p>
+          <p className="text-[13px] text-muted-foreground mt-0.5 break-words">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
