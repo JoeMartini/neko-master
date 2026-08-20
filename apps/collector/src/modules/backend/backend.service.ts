@@ -314,9 +314,9 @@ export class BackendService {
     } catch {
       throw new Error('Invalid backend URL');
     }
-    const allowed = ['http:', 'https:', 'ws:', 'wss:'];
+    const allowed = ['http:', 'https:', 'ws:', 'wss:', 'ssh:'];
     if (!allowed.includes(parsed.protocol)) {
-      throw new Error(`Unsupported backend URL scheme '${parsed.protocol}'. Allowed: http, https, ws, wss, agent`);
+      throw new Error(`Unsupported backend URL scheme '${parsed.protocol}'. Allowed: http, https, ws, wss, ssh, agent`);
     }
   }
 
@@ -560,8 +560,70 @@ export class BackendService {
     if (type === 'surge') {
       return this.testSurgeConnection(url, token);
     }
-    
+
+    if (type === 'conntrack') {
+      return this.testConntrackConnection(url, token);
+    }
+
     return this.testClashConnection(url, token);
+  }
+
+  private async testConntrackConnection(url: string, token?: string): Promise<TestConnectionResult> {
+    // For conntrack, the URL is ssh://user@host:port
+    // We do a quick SSH connection test by running 'cat /proc/net/nf_conntrack'
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    let host = '192.168.1.1';
+    let port = 22;
+    let username = 'root';
+    let keyPath = process.env.HOME + '/.ssh/id_ed25519_istoreos';
+
+    if (token && token.startsWith('/')) {
+      keyPath = token;
+    }
+
+    let cleaned = url.replace('ssh://', '');
+    const atIndex = cleaned.indexOf('@');
+    if (atIndex > 0) {
+      username = cleaned.slice(0, atIndex);
+      cleaned = cleaned.slice(atIndex + 1);
+    }
+    if (cleaned.includes(':')) {
+      const [h, p] = cleaned.split(':');
+      host = h;
+      port = parseInt(p, 10) || 22;
+    } else {
+      host = cleaned;
+    }
+
+    try {
+      const cmd = 'cat /proc/net/nf_conntrack 2>/dev/null | wc -l';
+      const sshCmd = [
+        'ssh',
+        '-o', 'ConnectTimeout=5',
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'BatchMode=yes',
+        '-i', keyPath,
+        '-p', String(port),
+        `${username}@${host}`,
+        `'${cmd}'`,
+      ].join(' ');
+
+      const { stdout } = await execAsync(sshCmd, { timeout: 15000 });
+      const lineCount = parseInt(stdout.trim(), 10) || 0;
+      return {
+        success: true,
+        message: `SSH connection successful. ${lineCount} conntrack entries found.`,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        message: `SSH connection failed: ${msg}`,
+      };
+    }
   }
 
   private getAgentHeartbeatTimeoutMs(): number {

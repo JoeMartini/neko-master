@@ -363,7 +363,7 @@ export async function createApp(options: AppOptions) {
   // ...
 
   // Helper to get headers for backend requests
-  const getHeaders = (backend: { type: 'clash' | 'surge'; token: string }) => {
+  const getHeaders = (backend: { type: 'clash' | 'surge' | 'conntrack'; token: string }) => {
     return buildGatewayHeaders(backend);
   };
 

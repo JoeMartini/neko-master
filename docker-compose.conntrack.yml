@@ -1,0 +1,25 @@
+services:
+  neko-master:
+    image: neko-master-conntrack:latest
+    # To use the official image instead, comment out the line above and
+    # uncomment the line below (conntrack support will be in a future release):
+    # image: foru17/neko-master:latest
+    container_name: neko-master
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Web UI
+      - "3002:3002"  # WebSocket (optional, for reverse proxy)
+    volumes:
+      - ./data:/app/data
+      # Mount SSH private key for conntrack collector (read-only)
+      - ~/.ssh/id_ed25519_istoreos:/root/.ssh/id_ed25519_istoreos:ro
+      # Local MMDB (optional, for offline GeoIP)
+      # - ./geoip:/app/data/geoip:ro
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/app/data/stats.db
+      - COOKIE_SECRET=${COOKIE_SECRET}
+      # Conntrack polling interval in milliseconds (default 3000)
+      - CONNTRACK_POLL_INTERVAL_MS=3000
+      # Flush interval for batch writes (default 30000)
+      - FLUSH_INTERVAL_MS=30000

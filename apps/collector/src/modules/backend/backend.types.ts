@@ -7,7 +7,7 @@ export interface BackendConfig {
   name: string;
   url: string;
   token: string;
-  type: 'clash' | 'surge';
+  type: 'clash' | 'surge' | 'conntrack';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
@@ -22,14 +22,14 @@ export interface CreateBackendInput {
   name: string;
   url: string;
   token?: string;
-  type?: 'clash' | 'surge';
+  type?: 'clash' | 'surge' | 'conntrack';
 }
 
 export interface UpdateBackendInput {
   name?: string;
   url?: string;
   token?: string;
-  type?: 'clash' | 'surge';
+  type?: 'clash' | 'surge' | 'conntrack';
   enabled?: boolean;
   listening?: boolean;
 }
@@ -47,7 +47,7 @@ export interface BackendResponse {
   name: string;
   url: string;
   token: string;
-  type: 'clash' | 'surge';
+  type: 'clash' | 'surge' | 'conntrack';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
@@ -59,7 +59,7 @@ export interface BackendResponse {
 export interface TestConnectionInput {
   url: string;
   token?: string;
-  type?: 'clash' | 'surge';
+  type?: 'clash' | 'surge' | 'conntrack';
 }
 
 export interface TestConnectionResult {

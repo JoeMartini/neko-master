@@ -260,7 +260,7 @@ interface Backend {
   mode: BackendMode;
   agentId: string;
   token: string;
-  type?: 'clash' | 'surge';
+  type?: 'clash' | 'surge' | 'conntrack';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
@@ -282,7 +282,7 @@ interface AgentBootstrapInfo {
   agentId: string;
   token: string;
   tokenLocked?: boolean;
-  type: 'clash' | 'surge';
+  type: 'clash' | 'surge' | 'conntrack';
   gatewayHost: string;
   gatewayPort: string;
   gatewaySsl: boolean;
@@ -329,7 +329,7 @@ interface BackendFormState {
   port: string;
   ssl: boolean;
   token: string;
-  type: 'clash' | 'surge';
+  type: 'clash' | 'surge' | 'conntrack';
   agentId: string;
   agentGatewayHost: string;
   agentGatewayPort: string;
@@ -348,11 +348,13 @@ interface AgentGatewayConfig {
   gatewayToken: string;
 }
 
-function getDefaultGatewayPort(type: 'clash' | 'surge'): string {
-  return type === "surge" ? "9091" : "9090";
+function getDefaultGatewayPort(type: 'clash' | 'surge' | 'conntrack'): string {
+  if (type === "surge") return "9091";
+  if (type === "conntrack") return "22";
+  return "9090";
 }
 
-function getDefaultAgentGatewayConfig(type: 'clash' | 'surge'): AgentGatewayConfig {
+function getDefaultAgentGatewayConfig(type: 'clash' | 'surge' | 'conntrack'): AgentGatewayConfig {
   return {
     gatewayHost: DEFAULT_AGENT_GATEWAY_HOST,
     gatewayPort: getDefaultGatewayPort(type),
@@ -361,16 +363,19 @@ function getDefaultAgentGatewayConfig(type: 'clash' | 'surge'): AgentGatewayConf
   };
 }
 
-function buildGatewayUrl(type: 'clash' | 'surge', host: string, port: string, ssl: boolean): string {
+function buildGatewayUrl(type: 'clash' | 'surge' | 'conntrack', host: string, port: string, ssl: boolean): string {
   const normalizedHost = host.trim() || DEFAULT_AGENT_GATEWAY_HOST;
   const normalizedPort = port.trim() || getDefaultGatewayPort(type);
+  if (type === "conntrack") {
+    return `ssh://${normalizedHost}:${normalizedPort}`;
+  }
   const protocol = ssl ? "https" : "http";
   return `${protocol}://${normalizedHost}:${normalizedPort}`;
 }
 
 function loadAgentGatewayConfig(
   backendId: number,
-  type: 'clash' | 'surge',
+  type: 'clash' | 'surge' | 'conntrack',
 ): AgentGatewayConfig {
   const fallback = getDefaultAgentGatewayConfig(type);
   if (typeof window === "undefined") {
@@ -737,7 +742,7 @@ export function BackendConfigDialog({
     name: string;
     url: string;
     token: string;
-    type: 'clash' | 'surge';
+    type: 'clash' | 'surge' | 'conntrack';
   } | null>(null);
 
   const [formData, setFormData] = useState<BackendFormState>(
@@ -1555,12 +1560,13 @@ export function BackendConfigDialog({
                             <select
                               value={editFormData.type}
                               onChange={(e) =>
-                                setEditFormData({ ...editFormData, type: e.target.value as 'clash' | 'surge' })
+                                setEditFormData({ ...editFormData, type: e.target.value as 'clash' | 'surge' | 'conntrack' })
                               }
                               className="h-9 mt-1 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                             >
                               <option value="clash">Clash / Mihomo</option>
                               <option value="surge">Surge</option>
+                              <option value="conntrack">Conntrack (SSH)</option>
                             </select>
                           </div>
                           {editFormData.mode === "direct" && (
@@ -1680,11 +1686,11 @@ export function BackendConfigDialog({
                             {/* Backend Type Icon */}
                             <div
                               className="w-4 h-4 rounded-sm bg-white/90 flex items-center justify-center p-0.5"
-                              title={backend.type === 'surge' ? 'Surge' : 'Clash / Mihomo'}
+                              title={backend.type === 'surge' ? 'Surge' : backend.type === 'conntrack' ? 'Conntrack (SSH)' : 'Clash / Mihomo'}
                             >
                               <img
-                                src={backend.type === 'surge' ? '/icons/icon-surge.png' : '/icons/icon-clash.png'}
-                                alt={backend.type === 'surge' ? 'Surge' : 'Clash'}
+                                src={backend.type === 'surge' ? '/icons/icon-surge.png' : backend.type === 'conntrack' ? '/icons/icon-clash.png' : '/icons/icon-clash.png'}
+                                alt={backend.type === 'surge' ? 'Surge' : backend.type === 'conntrack' ? 'Conntrack' : 'Clash'}
                                 className="w-full h-full object-contain"
                               />
                             </div>
@@ -1912,7 +1918,7 @@ export function BackendConfigDialog({
                           <select
                             value={formData.type}
                             onChange={(e) => {
-                              const nextType = e.target.value as 'clash' | 'surge';
+                              const nextType = e.target.value as 'clash' | 'surge' | 'conntrack';
                               const currentDefaultPort = getDefaultGatewayPort(formData.type);
                               const nextDefaultPort = getDefaultGatewayPort(nextType);
                               setFormData({
@@ -1928,6 +1934,7 @@ export function BackendConfigDialog({
                           >
                             <option value="clash">Clash / Mihomo</option>
                             <option value="surge">Surge</option>
+                            <option value="conntrack">Conntrack (SSH)</option>
                           </select>
                         </div>
                         {formData.mode === "direct" && (
@@ -2544,12 +2551,13 @@ export function BackendConfigDialog({
                 <select
                   value={editFormData.type}
                   onChange={(e) =>
-                    setEditFormData({ ...editFormData, type: e.target.value as 'clash' | 'surge' })
+                    setEditFormData({ ...editFormData, type: e.target.value as 'clash' | 'surge' | 'conntrack' })
                   }
                   disabled
                   className="h-9 mt-1 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed">
                   <option value="clash">Clash / Mihomo</option>
                   <option value="surge">Surge</option>
+                  <option value="conntrack">Conntrack (SSH)</option>
                 </select>
               </div>
               {editFormData.mode === "direct" && (
@@ -2684,7 +2692,7 @@ export function BackendConfigDialog({
                 <select
                   value={formData.type}
                   onChange={(e) => {
-                    const nextType = e.target.value as 'clash' | 'surge';
+                    const nextType = e.target.value as 'clash' | 'surge' | 'conntrack';
                     const currentDefaultPort = getDefaultGatewayPort(formData.type);
                     const nextDefaultPort = getDefaultGatewayPort(nextType);
                     setFormData({
@@ -2699,6 +2707,7 @@ export function BackendConfigDialog({
                   className="h-9 mt-1 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                   <option value="clash">Clash / Mihomo</option>
                   <option value="surge">Surge</option>
+                  <option value="conntrack">Conntrack (SSH)</option>
                 </select>
               </div>
               {formData.mode === "direct" && (

@@ -15,6 +15,7 @@ config({ quiet: true });
 import { StatsDatabase, BackendConfig } from './modules/db/db.js';
 import { createCollector, GatewayCollector } from './modules/collector/gateway.collector.js';
 import { createSurgeCollector, SurgeCollector } from './modules/collector/surge.collector.js';
+import { createConntrackCollector, ConntrackCollector } from './modules/collector/conntrack.collector.js';
 import { StatsWebSocketServer } from './modules/websocket/websocket.server.js';
 import { realtimeStore } from './modules/realtime/realtime.store.js';
 import { SurgePolicySyncService } from './modules/surge/surge-policy-sync.js';
@@ -61,7 +62,7 @@ function loadCleanupOverridesFromEnv(): CleanupOverrides {
 }
 
 // Map of backend connections: backendId -> GatewayCollector | SurgeCollector
-const collectors = new Map<number, GatewayCollector | SurgeCollector>();
+const collectors = new Map<number, GatewayCollector | SurgeCollector | ReturnType<typeof createConntrackCollector>>();
 let db: StatsDatabase;
 
 let apiServer: APIServer;
@@ -118,6 +119,7 @@ async function main() {
       const collector = collectors.get(backendId) as
         | (GatewayCollector & { clearRuntimeState?: () => void })
         | (SurgeCollector & { clearRuntimeState?: () => void })
+        | ({ clearRuntimeState?: () => void })
         | undefined;
       collector?.clearRuntimeState?.();
       wsServer.clearBackendCache(backendId);
@@ -237,6 +239,23 @@ function startCollector(backend: BackendConfig) {
 
     collectors.set(backend.id, collector);
     collector.start();
+  } else if (backend.type === 'conntrack') {
+    // Create and start Conntrack collector (SSH polling)
+    // url format: ssh://user@host:port or just host
+    // token: path to SSH private key (optional)
+    const collector = createConntrackCollector(
+      db,
+      backend.url,
+      backend.token || undefined,
+      geoService,
+      () => {
+        wsServer.broadcastStats(backend.id);
+      },
+      backend.id
+    );
+
+    collectors.set(backend.id, collector);
+    collector.start();
   } else {
     // Create and start Clash collector (WebSocket)
     let wsUrl = backend.url.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://');
@@ -269,6 +288,7 @@ function stopCollector(backendId: number) {
     if (collector instanceof GatewayCollector) {
       collector.disconnect();
     } else {
+      // SurgeCollector and conntrack collector both have stop()
       collector.stop();
     }
     collectors.delete(backendId);
